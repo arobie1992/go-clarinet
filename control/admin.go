@@ -9,7 +9,7 @@ import (
 
 const InitiateConnectionPath = "/admin/connect"
 
-type connectReq struct {
+type adminConnectRequest struct {
 	TargetNode string `json:"targetNode"`
 }
 
@@ -30,15 +30,15 @@ func InitiateConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var cr connectReq
-	err = json.Unmarshal(data, &cr)
+	var req adminConnectRequest
+	err = json.Unmarshal(data, &req)
 	if err != nil {
 		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Invalid body format."})
 		return
 	}
 
-	log.Printf("Received request to connect to %s\n", cr.TargetNode)
-	if err := requestConnection(cr.TargetNode); err != nil {
+	log.Printf("Received request to connect to %s\n", req.TargetNode)
+	if err := requestConnection(req.TargetNode); err != nil {
 		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to request connection."})
 		return
 	}
