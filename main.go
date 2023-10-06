@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +15,8 @@ import (
 	"github.com/go-clarinet/control"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/multiformats/go-multiaddr"
 )
 
 func main() {
@@ -26,13 +32,13 @@ func main() {
 		log.Fatal("Failed to load configuration.", err)
 	}
 
-	priv, err := getKey(config.CertPath)
+	priv, err := getKey(config.Libp2p.CertPath)
 	if err != nil {
 		log.Fatal("Failed to load certificate.", err)
 	}
 
 	node, err := libp2p.New(
-		libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/127.0.0.1/udp/%d/quic-v1", config.Port)),
+		libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/127.0.0.1/udp/%d/quic-v1", config.Libp2p.Port)),
 		libp2p.Identity(*priv),
 		libp2p.DisableRelay(),
 	)
@@ -40,12 +46,20 @@ func main() {
 		log.Fatal("Failed to create node.", err)
 	}
 
-	// just to have something to do with node for the moment
-	log.Println(node.Addrs())
+	node.SetStreamHandler(control.ConnectProtocolID, control.ConnectStreamHandler)
+	if err := control.SetLibp2pNode(node); err != nil {
+		log.Fatal("Global libp2pNode already set!", err)
+	}
+	fullAddr := getHostAddress(control.GetLibP2pNode())
+	log.Printf("I am %s\n", fullAddr)
 
+	// start a http handler so we have some endpoints to trigger behavior through for testing
 	http.HandleFunc(control.InitiateConnectionPath, control.InitiateConnection)
 	log.Println("Starting http server")
-	err = http.ListenAndServe(":8080", nil)
+	err = http.ListenAndServe(fmt.Sprintf(":%d", config.Admin.Port), nil)
+	if err != nil {
+		log.Fatal("Failed to start server", err)
+	}
 	<-ctx.Done()
 }
 
@@ -54,9 +68,33 @@ func getKey(file string) (*crypto.PrivKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	key, _, err := crypto.GenerateEd25519Key(r)
+
+	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
-	return &key, nil
+
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, errors.New("Invalid key format")
+	}
+
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	libp2pKey, _, err := crypto.KeyPairFromStdKey(key)
+
+	return &libp2pKey, nil
+}
+
+func getHostAddress(ha host.Host) string {
+	// Build host multiaddress
+	hostAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/p2p/%s", ha.ID()))
+
+	// Now we can build a full multiaddress to reach this host
+	// by encapsulating both addresses:
+	addr := ha.Addrs()[0]
+	return addr.Encapsulate(hostAddr).String()
 }
