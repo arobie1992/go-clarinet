@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 )
 
@@ -22,6 +23,7 @@ type Config struct {
 func LoadConfig(configPath string) (*Config, error) {
 	if configPath == "" {
 		configPath = "./config.json"
+		log.Printf("No parameter file provided. Will attempt to load default '%s' file.\n", configPath)
 	}
 	contents, err := os.ReadFile(configPath)
 	if err != nil {
