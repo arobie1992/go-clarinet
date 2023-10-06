@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/go-clarinet/config"
+	"github.com/go-clarinet/control"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
 )
@@ -38,8 +40,12 @@ func main() {
 		log.Fatal("Failed to create node.", err)
 	}
 
+	// just to have something to do with node for the moment
 	log.Println(node.Addrs())
 
+	http.HandleFunc(control.InitiateConnectionPath, control.InitiateConnection)
+	log.Println("Starting http server")
+	err = http.ListenAndServe(":8080", nil)
 	<-ctx.Done()
 }
 
