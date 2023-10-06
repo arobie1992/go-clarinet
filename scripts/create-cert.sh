@@ -18,5 +18,5 @@ if [[ -z "$pub_name" ]]; then
     exit 1
 fi
 
-openssl genrsa -out priv.pem
-openssl rsa -in priv.pem -pubout -out pub.pem
+openssl genrsa -out "$priv_name"
+openssl rsa -in "$priv_name" -pubout -out "$pub_name"
