@@ -48,7 +48,7 @@ const (
 )
 
 type Connection struct {
-	Id       uuid.UUID `gorm:"primaryKey"`
+	ID       uuid.UUID `gorm:"primaryKey"`
 	Sender   string
 	Witness  string
 	Receiver string
