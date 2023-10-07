@@ -30,8 +30,7 @@ func GetFullAddr() string {
 }
 
 func InitLibp2pNode(config *config.Config) error {
-	var retErr error
-	retErr = nil
+	var retErr error = nil
 	once.Do(func() {
 		priv, err := getKey(config.Libp2p.CertPath)
 		if err != nil {
