@@ -2,12 +2,21 @@ package control
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+
+	"github.com/go-clarinet/config"
 )
 
-const InitiateConnectionPath = "/admin/connect"
+const initiateConnectionPath = "/admin/connect"
+
+func StartAdminServer(config *config.Config) error {
+	http.HandleFunc(initiateConnectionPath, initiateConnection)
+	log.Println("Starting http server")
+	return http.ListenAndServe(fmt.Sprintf(":%d", config.Admin.Port), nil)
+}
 
 type adminConnectRequest struct {
 	TargetNode string `json:"targetNode"`
@@ -18,7 +27,7 @@ type badResp struct {
 	Detail string `json:"detail"`
 }
 
-func InitiateConnection(w http.ResponseWriter, r *http.Request) {
+func initiateConnection(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeResponse(w, http.StatusMethodNotAllowed, map[string]string{"Allow": "POST"}, nil)
 		return
