@@ -118,6 +118,8 @@ func connectStreamHandler(s network.Stream) {
 
 	log.Printf("received: %s\n", req.String())
 
+	// Save a new connection
+
 	resp := ConnectResponse{ConnectResponseStatusAccepted, ConnectResponseRejectReasonNone, ""}
 	_, err = s.Write([]byte(SerializeConnectResponse(resp)))
 	if err != nil {
@@ -203,7 +205,7 @@ func DeserializeConnectRequest(req *ConnectRequest, msg string) error {
 		return errors.New("Invalid ConnectRequest format: Unrecognized WS.")
 	}
 
-	connId, err := uuid.FromBytes([]byte(parts[3]))
+	connId, err := uuid.Parse(parts[2])
 	if err != nil {
 		log.Printf("Failed to parse ConnID: %s\n", err.Error())
 		return errors.New("Invalid ConnectRequest format: Failed to parse ConnID.")

@@ -23,31 +23,41 @@ func requestConnection(targetNode string) error {
 		return err
 	}
 
+	// establish the physical connection
 	p2p.GetLibp2pNode().Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
 	s, err := p2p.GetLibp2pNode().NewStream(context.Background(), info.ID, p2p.ConnectProtocolID)
 	if err != nil {
 		return err
 	}
 
+	// create the logical connection
 	conn, err := repository.CreateOutgoingConnection(targetNode)
 	if err != nil {
 		return err
 	}
 
+	// send the request
 	req := p2p.ConnectRequest{CT: p2p.ConnectionTypeSubscribe, WS: p2p.WitnessSelectorRequestor, ConnID: conn.ID}
 	_, err = s.Write([]byte(p2p.SerializeConnectRequest(req)))
 	if err != nil {
 		return err
 	}
 
+	// read the response and update the connection as appropriate
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
 	}
 	var resp p2p.ConnectResponse
 	if err := p2p.DeserializeConnectResponse(&resp, string(out)); err != nil {
+		// TODO for now delete the connection and attempt to notify the other node to delete
 		return err
+	} else {
+		// TODO interpret the valid response
+		// If rejected, figure out why and alter request if applicable
 	}
+
+	// TODO begin the witness request process
 
 	log.Printf("reply: %s\n", resp.String())
 	return nil
