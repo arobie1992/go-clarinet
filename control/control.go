@@ -9,8 +9,10 @@ import (
 
 	"github.com/go-clarinet/p2p"
 	"github.com/go-clarinet/repository"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -22,7 +24,11 @@ func requestConnection(targetNode string) error {
 	}
 
 	if err := sendConnectRequest(conn); err != nil {
-		// TODO send close response
+		conn.Status = repository.ConnectionStatusClosed
+		repository.GetDB().Save(conn)
+		if err := sendCloseRequest(conn); err != nil {
+			log.Printf("Close request failed: %s\n", err.Error())
+		}
 		return err
 	}
 
@@ -36,21 +42,11 @@ func requestConnection(targetNode string) error {
 }
 
 func sendConnectRequest(conn *repository.Connection) error {
-	maddr, err := multiaddr.NewMultiaddr(conn.Receiver)
+	s, err := openStream(conn.Receiver, p2p.ConnectProtocolID)
 	if err != nil {
 		return err
 	}
-
-	info, err := peer.AddrInfoFromP2pAddr(maddr)
-	if err != nil {
-		return err
-	}
-
-	p2p.GetLibp2pNode().Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
-	s, err := p2p.GetLibp2pNode().NewStream(context.Background(), info.ID, p2p.ConnectProtocolID)
-	if err != nil {
-		return err
-	}
+	defer s.Close()
 
 	req := p2p.ConnectRequest{CT: p2p.ConnectionTypeSubscribe, WS: p2p.WitnessSelectorRequestor, ConnID: conn.ID}
 	_, err = s.Write([]byte(p2p.SerializeConnectRequest(req)))
@@ -73,4 +69,45 @@ func sendConnectRequest(conn *repository.Connection) error {
 	}
 
 	return nil
+}
+
+func sendCloseRequest(conn *repository.Connection) error {
+	s, err := openStream(conn.Receiver, p2p.CloseProtocolID)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	req := p2p.CloseRequest{ConnID: conn.ID}
+	_, err = s.Write([]byte(p2p.SerializeCloseRequest(req)))
+	if err != nil {
+		return err
+	}
+
+	out, err := io.ReadAll(s)
+	if err != nil {
+		return err
+	}
+
+	var resp p2p.CloseResponse
+	if err := p2p.DeserializeCloseResponse(&resp, string(out)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func openStream(targetNode string, protocol protocol.ID) (network.Stream, error) {
+	maddr, err := multiaddr.NewMultiaddr(targetNode)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := peer.AddrInfoFromP2pAddr(maddr)
+	if err != nil {
+		return nil, err
+	}
+
+	p2p.GetLibp2pNode().Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
+	return p2p.GetLibp2pNode().NewStream(context.Background(), info.ID, protocol)
 }

@@ -55,6 +55,7 @@ func InitLibp2pNode(config *config.Config) error {
 		}
 
 		node.SetStreamHandler(ConnectProtocolID, connectStreamHandler)
+		node.SetStreamHandler(CloseProtocolID, closeStreamHandler)
 		libp2pNode = node
 		fullAddr = getHostAddress(GetLibp2pNode())
 	})
@@ -118,7 +119,7 @@ func connectStreamHandler(s network.Stream) {
 
 	log.Printf("received: %s\n", req.String())
 
-	// Save a new connection
+	// TODO Save a new connection
 
 	resp := ConnectResponse{ConnectResponseStatusAccepted, ConnectResponseRejectReasonNone, ""}
 	_, err = s.Write([]byte(SerializeConnectResponse(resp)))
@@ -307,4 +308,98 @@ func DeserializeConnectResponse(resp *ConnectResponse, msg string) error {
 	resp.Reason = ConnectResponseRejectReason(reason)
 	resp.ErrMsg = errMsg
 	return nil
+}
+
+type CloseRequest struct {
+	ConnID uuid.UUID
+}
+
+func SerializeCloseRequest(req CloseRequest) string {
+	return fmt.Sprintf("%s;", req.ConnID)
+}
+
+func DeserializeCloseRequest(req *CloseRequest, msg string) error {
+	termIdx := strings.Index(msg, ";")
+	if termIdx != len(msg)-1 {
+		return errors.New("Invalid ConnectRequest format: No terminating ';'.")
+	}
+
+	connID, err := uuid.Parse(msg[:len(msg)-1])
+	if err != nil {
+		log.Printf("Failed to parse ConnID: %s\n", err.Error())
+		return errors.New("Invalid CloseRequest format: Failed to parse ConnID.")
+	}
+
+	req.ConnID = connID
+	return nil
+}
+
+type CloseResponseStatus int
+
+const (
+	CloseResponseStatusSuccess = iota
+	CloseResponseStatusFailure
+)
+
+type CloseResponse struct {
+	Status  CloseResponseStatus
+	FailMsg string
+}
+
+func SerializeCloseResponse(resp CloseResponse) string {
+	return fmt.Sprintf("%d.%s;", resp.Status, base64.RawStdEncoding.EncodeToString([]byte(resp.FailMsg)))
+}
+
+func DeserializeCloseResponse(resp *CloseResponse, msg string) error {
+	termIdx := strings.Index(msg, ";")
+	if termIdx != len(msg)-1 {
+		return errors.New("Invalid ConnectRequest format: No terminating ';'.")
+	}
+
+	status, err := strconv.Atoi(msg[:len(msg)-1])
+	if err != nil {
+		log.Printf("Failed to parse Status: %s\n", err.Error())
+		return errors.New("Invalid ConnectRequest format: Failed to parse Status.")
+	}
+
+	if status != CloseResponseStatusSuccess && status != CloseResponseStatusFailure {
+		log.Printf("Unrecognized Status: %s\n", err.Error())
+		return errors.New("Invalid ConnectRequest format: Unrecognized Status.")
+	}
+
+	resp.Status = CloseResponseStatus(status)
+	return nil
+}
+
+const CloseProtocolID = "/close"
+
+func closeStreamHandler(s network.Stream) {
+	buf := bufio.NewReader(s)
+	str, err := buf.ReadString(';')
+	if err != nil {
+		log.Println(err)
+		s.Reset()
+		return
+	}
+
+	var req CloseRequest
+	if err := DeserializeCloseRequest(&req, str); err != nil {
+		resp := CloseResponse{CloseResponseStatusFailure, err.Error()}
+		s.Write([]byte(SerializeCloseResponse(resp)))
+		s.Reset()
+		return
+	}
+
+	log.Printf("received: %v\n", req)
+
+	// TODO find the connection and update its status to closed
+
+	resp := CloseResponse{CloseResponseStatusSuccess, ""}
+	_, err = s.Write([]byte(SerializeCloseResponse(resp)))
+	if err != nil {
+		log.Println(err)
+		s.Reset()
+	} else {
+		s.Close()
+	}
 }
