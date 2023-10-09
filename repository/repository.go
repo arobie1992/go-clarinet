@@ -41,10 +41,10 @@ func InitDB(config *config.Config) error {
 type connectionStatus int
 
 const (
-	requestingReceiver = iota
-	requestingWitness
-	open
-	closed
+	ConnectionStatusRequestingReceiver = iota
+	ConnectionStatusRequestingWitness
+	ConnectionStatusOpen
+	ConnectionStatusClosed
 )
 
 type Connection struct {
@@ -56,7 +56,13 @@ type Connection struct {
 }
 
 func CreateOutgoingConnection(targetNode string) (*Connection, error) {
-	connection := Connection{uuid.New(), p2p.GetFullAddr(), targetNode, "", requestingReceiver}
+	connection := Connection{
+		ID:       uuid.New(),
+		Sender:   p2p.GetFullAddr(),
+		Receiver: targetNode,
+		Witness:  "",
+		Status:   ConnectionStatusRequestingReceiver,
+	}
 	tx := db.Create(connection)
 	if tx.Error != nil {
 		return nil, tx.Error

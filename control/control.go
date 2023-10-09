@@ -2,6 +2,8 @@ package control
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 
@@ -13,7 +15,28 @@ import (
 )
 
 func requestConnection(targetNode string) error {
-	maddr, err := multiaddr.NewMultiaddr(targetNode)
+	// create the logical connection
+	conn, err := repository.CreateOutgoingConnection(targetNode)
+	if err != nil {
+		return err
+	}
+
+	if err := sendConnectRequest(conn); err != nil {
+		// TODO send close response
+		return err
+	}
+
+	log.Printf("Successfully connected to %s\n", conn.Receiver)
+	conn.Status = repository.ConnectionStatusRequestingReceiver
+	repository.GetDB().Save(conn)
+
+	// TODO begin the witness request process
+
+	return nil
+}
+
+func sendConnectRequest(conn *repository.Connection) error {
+	maddr, err := multiaddr.NewMultiaddr(conn.Receiver)
 	if err != nil {
 		return err
 	}
@@ -23,20 +46,12 @@ func requestConnection(targetNode string) error {
 		return err
 	}
 
-	// establish the physical connection
 	p2p.GetLibp2pNode().Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
 	s, err := p2p.GetLibp2pNode().NewStream(context.Background(), info.ID, p2p.ConnectProtocolID)
 	if err != nil {
 		return err
 	}
 
-	// create the logical connection
-	conn, err := repository.CreateOutgoingConnection(targetNode)
-	if err != nil {
-		return err
-	}
-
-	// send the request
 	req := p2p.ConnectRequest{CT: p2p.ConnectionTypeSubscribe, WS: p2p.WitnessSelectorRequestor, ConnID: conn.ID}
 	_, err = s.Write([]byte(p2p.SerializeConnectRequest(req)))
 	if err != nil {
@@ -50,15 +65,12 @@ func requestConnection(targetNode string) error {
 	}
 	var resp p2p.ConnectResponse
 	if err := p2p.DeserializeConnectResponse(&resp, string(out)); err != nil {
-		// TODO for now delete the connection and attempt to notify the other node to delete
 		return err
-	} else {
-		// TODO interpret the valid response
-		// If rejected, figure out why and alter request if applicable
 	}
 
-	// TODO begin the witness request process
+	if resp.Status != p2p.ConnectResponseStatusAccepted {
+		return errors.New(fmt.Sprintf("ConnectRequest not accepted: %s: %s", resp.Reason.Name(), resp.ErrMsg))
+	}
 
-	log.Printf("reply: %s\n", resp.String())
 	return nil
 }

@@ -226,6 +226,19 @@ const (
 
 type ConnectResponseRejectReason int
 
+func (r ConnectResponseRejectReason) Name() string {
+	switch r {
+	case ConnectResponseRejectReasonNone:
+		return "None"
+	case ConnectResponseRejectReasonHasErrors:
+		return "HasErrors"
+	case ConnectResponseRejectReasonUnacceptableWS:
+		return "UnacceptableWS"
+	default:
+		return "Unknown"
+	}
+}
+
 const (
 	ConnectResponseRejectReasonNone = iota
 	ConnectResponseRejectReasonHasErrors
@@ -233,38 +246,29 @@ const (
 )
 
 type ConnectResponse struct {
-	status ConnectResponseStatus
-	reason ConnectResponseRejectReason
-	errMsg string
+	Status ConnectResponseStatus
+	Reason ConnectResponseRejectReason
+	ErrMsg string
 }
 
 func (resp *ConnectResponse) String() string {
 	status := "unknown"
-	switch ConnectResponseStatus(resp.status) {
+	switch ConnectResponseStatus(resp.Status) {
 	case ConnectResponseStatusAccepted:
 		status = "accepted"
 	case ConnectResponseStatusRejected:
 		status = "rejected"
 	}
 
-	reason := "unknown"
-	switch ConnectResponseRejectReason(resp.reason) {
-	case ConnectResponseRejectReasonNone:
-		reason = "none"
-	case ConnectResponseRejectReasonHasErrors:
-		reason = "hasErrors"
-	case ConnectResponseRejectReasonUnacceptableWS:
-		reason = "unacceptableWS"
-	}
-	return fmt.Sprintf("peerConnectResponse{status: %s, reason: %s, errMsg: \"%s\"}", status, reason, resp.errMsg)
+	return fmt.Sprintf("peerConnectResponse{status: %s, reason: %s, errMsg: \"%s\"}", status, resp.Reason.Name(), resp.ErrMsg)
 }
 
 func SerializeConnectResponse(resp ConnectResponse) string {
 	enc := ""
-	if resp.errMsg != "" {
-		enc = base64.RawStdEncoding.EncodeToString([]byte(resp.errMsg))
+	if resp.ErrMsg != "" {
+		enc = base64.RawStdEncoding.EncodeToString([]byte(resp.ErrMsg))
 	}
-	return fmt.Sprintf("%d.%d.%s;", resp.status, resp.reason, enc)
+	return fmt.Sprintf("%d.%d.%s;", resp.Status, resp.Reason, enc)
 }
 
 func DeserializeConnectResponse(resp *ConnectResponse, msg string) error {
@@ -299,8 +303,8 @@ func DeserializeConnectResponse(resp *ConnectResponse, msg string) error {
 		errMsg = string(dec)
 	}
 
-	resp.status = ConnectResponseStatus(status)
-	resp.reason = ConnectResponseRejectReason(reason)
-	resp.errMsg = errMsg
+	resp.Status = ConnectResponseStatus(status)
+	resp.Reason = ConnectResponseRejectReason(reason)
+	resp.ErrMsg = errMsg
 	return nil
 }
