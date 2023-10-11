@@ -2,8 +2,22 @@
 
 ## Libraries used:
 - https://github.com/libp2p/go-libp2p
+- https://gorm.io/
+- https://www.sqlite.org/index.html
 
 ## Development
+
+### Setup
+
+#### Generating a private key
+The application requires a private key to give the libp2p node its identity. You can use `scripts/create-cert.sh`
+to create a key for you. To run the script execute `create-cert.sh {private key name} {public key name}`. If you 
+would like to generate your own, any [PKCS8 key](https://en.wikipedia.org/wiki/PKCS_8) should work.
+
+#### Setting up and connecting DB
+You can let the app create the DB by just specifying the file in the configuration or you can create the DB
+beforehand by running the command `sqlite3 {db name}.db` and using the path to this file in your configuration.
+If you use the sqlite command, this will also open up the [cli](https://sqlite.org/cli.html).
 
 ### Running
 You can run the application like any typical Go application, typically either with `go run main.go` 
@@ -12,11 +26,6 @@ which is specified in a json file. An example of the config format is provided i
 The path to the config file can be passed as a command line argument when starting the application, 
 for example: `go run main.go some/path/config.json`. If no argument is provided, the application will 
 attempt to load a file named `config.json` in the current directory.
-
-### Generating a private key
-The application requires a private key to give the libp2p node its identity. You can use `scripts/create-cert.sh`
-to create a key for you. To run the script execute `create-cert.sh {private key name} {public key name}`. If you 
-would like to generate your own, any [PKCS8 key](https://en.wikipedia.org/wiki/PKCS_8) should work.
 
 ### Admin endpoints
 The application provides some HTTP endpoints under the `/admin` path. These allow triggering of certain actions
