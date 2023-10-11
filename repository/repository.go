@@ -4,8 +4,6 @@ import (
 	"sync"
 
 	"github.com/go-clarinet/config"
-	"github.com/go-clarinet/p2p"
-	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -17,7 +15,7 @@ func GetDB() *gorm.DB {
 	return db
 }
 
-func InitDB(config *config.Config) error {
+func InitDB(config *config.Config, dst ...interface{}) error {
 	var retErr error = nil
 	once.Do(func() {
 		// use a tempDB variable so the shared variable is only set if there are no errors
@@ -29,43 +27,11 @@ func InitDB(config *config.Config) error {
 			return
 		}
 		// add persistence classes here
-		if err := tempDB.AutoMigrate(&Connection{}); err != nil {
+		if err := tempDB.AutoMigrate(dst...); err != nil {
 			retErr = err
 			return
 		}
 		db = tempDB
 	})
 	return retErr
-}
-
-type connectionStatus int
-
-const (
-	ConnectionStatusRequestingReceiver = iota
-	ConnectionStatusRequestingWitness
-	ConnectionStatusOpen
-	ConnectionStatusClosed
-)
-
-type Connection struct {
-	ID       uuid.UUID `gorm:"primaryKey"`
-	Sender   string
-	Witness  string
-	Receiver string
-	Status   connectionStatus
-}
-
-func CreateOutgoingConnection(targetNode string) (*Connection, error) {
-	connection := Connection{
-		ID:       uuid.New(),
-		Sender:   p2p.GetFullAddr(),
-		Receiver: targetNode,
-		Witness:  "",
-		Status:   ConnectionStatusRequestingReceiver,
-	}
-	tx := db.Create(connection)
-	if tx.Error != nil {
-		return nil, tx.Error
-	}
-	return &connection, nil
 }

@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/go-clarinet/config"
+	"github.com/go-clarinet/repository"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -119,7 +120,14 @@ func connectStreamHandler(s network.Stream) {
 
 	log.Printf("received: %s\n", req.String())
 
-	// TODO Save a new connection
+	conn := CreateIncomingConnection(req.ConnID, s.Conn().RemoteMultiaddr().String())
+	tx := repository.GetDB().Save(&conn)
+	if tx.Error != nil {
+		resp := ConnectResponse{ConnectResponseStatusRejected, ConnectResponseRejectReasonHasErrors, tx.Error.Error()}
+		s.Write([]byte(SerializeConnectResponse(resp)))
+		s.Reset()
+		return
+	}
 
 	resp := ConnectResponse{ConnectResponseStatusAccepted, ConnectResponseRejectReasonNone, ""}
 	_, err = s.Write([]byte(SerializeConnectResponse(resp)))
@@ -392,7 +400,14 @@ func closeStreamHandler(s network.Stream) {
 
 	log.Printf("received: %v\n", req)
 
-	// TODO find the connection and update its status to closed
+	conn := Connection{ID: req.ConnID, Status: ConnectionStatusClosed}
+	tx := repository.GetDB().Save(&conn)
+	if tx.Error != nil {
+		resp := CloseResponse{CloseResponseStatusFailure, err.Error()}
+		s.Write([]byte(SerializeCloseResponse(resp)))
+		s.Reset()
+		return
+	}
 
 	resp := CloseResponse{CloseResponseStatusSuccess, ""}
 	_, err = s.Write([]byte(SerializeCloseResponse(resp)))

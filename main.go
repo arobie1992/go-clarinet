@@ -25,7 +25,7 @@ func main() {
 	}
 	log.Printf("I am %s\n", p2p.GetFullAddr())
 
-	if err := repository.InitDB(config); err != nil {
+	if err := repository.InitDB(config, &p2p.Connection{}); err != nil {
 		log.Fatal("Failed to initialize database", err)
 	}
 

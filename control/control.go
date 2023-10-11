@@ -18,13 +18,13 @@ import (
 
 func requestConnection(targetNode string) error {
 	// create the logical connection
-	conn, err := repository.CreateOutgoingConnection(targetNode)
+	conn, err := p2p.CreateOutgoingConnection(targetNode)
 	if err != nil {
 		return err
 	}
 
 	if err := sendConnectRequest(conn); err != nil {
-		conn.Status = repository.ConnectionStatusClosed
+		conn.Status = p2p.ConnectionStatusClosed
 		repository.GetDB().Save(conn)
 		if err := sendCloseRequest(conn); err != nil {
 			log.Printf("Close request failed: %s\n", err.Error())
@@ -33,15 +33,18 @@ func requestConnection(targetNode string) error {
 	}
 
 	log.Printf("Successfully connected to %s\n", conn.Receiver)
-	conn.Status = repository.ConnectionStatusRequestingReceiver
-	repository.GetDB().Save(conn)
-
+	conn.Status = p2p.ConnectionStatusRequestingWitness
+	tx := repository.GetDB().Save(conn)
+	if tx.Error != nil {
+		// TODO decide on how to handle failure to save
+		return tx.Error
+	}
 	// TODO begin the witness request process
 
 	return nil
 }
 
-func sendConnectRequest(conn *repository.Connection) error {
+func sendConnectRequest(conn *p2p.Connection) error {
 	s, err := openStream(conn.Receiver, p2p.ConnectProtocolID)
 	if err != nil {
 		return err
@@ -71,7 +74,7 @@ func sendConnectRequest(conn *repository.Connection) error {
 	return nil
 }
 
-func sendCloseRequest(conn *repository.Connection) error {
+func sendCloseRequest(conn *p2p.Connection) error {
 	s, err := openStream(conn.Receiver, p2p.CloseProtocolID)
 	if err != nil {
 		return err
