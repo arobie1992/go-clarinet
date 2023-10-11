@@ -57,7 +57,6 @@ func sendConnectRequest(conn *p2p.Connection) error {
 		return err
 	}
 
-	// read the response and update the connection as appropriate
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
