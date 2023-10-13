@@ -68,6 +68,11 @@ func writeResponse(w http.ResponseWriter, status int, headers map[string]string,
 		m, err := json.Marshal(jsonBody)
 		if err != nil {
 			log.Printf("Failed to serialize body: %s\n", err)
+			// TODO better handling. This is just so the request completes at all.
+			_, err = w.Write([]byte{})
+			if err != nil {
+				log.Printf("Failed to write body: %s\n", err)
+			}
 			return
 		}
 		_, err = w.Write(m)
