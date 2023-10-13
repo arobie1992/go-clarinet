@@ -1,0 +1,9 @@
+{
+    "libp2p": {
+        "port": 4432,
+        "certPath": ".scratch/somenode/privatekey.pem"    
+    },
+    "admin": {
+        "port": 8080
+    }
+}
