@@ -1,7 +1,8 @@
 {
     "libp2p": {
         "port": 4432,
-        "certPath": ".scratch/somenode/privatekey.pem"    
+        "certPath": ".scratch/somenode/privatekey.pem",
+        "dbPath": ".scratch/somenode/db.db"
     },
     "admin": {
         "port": 8080

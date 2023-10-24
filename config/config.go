@@ -9,6 +9,7 @@ import (
 type libp2pConfig struct {
 	Port     int
 	CertPath string
+	DbPath   string
 }
 
 type adminConfig struct {
