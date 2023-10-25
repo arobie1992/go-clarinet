@@ -1,7 +1,6 @@
 package control
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,10 +10,7 @@ import (
 	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/p2p"
 	"github.com/go-clarinet/repository"
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/peerstore"
-	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 func requestConnection(targetNode string) error {
@@ -73,7 +69,7 @@ func requestConnection(targetNode string) error {
 }
 
 func sendConnectRequest(conn *p2p.Connection) error {
-	s, err := openStream(conn.Receiver, p2p.ConnectProtocolID)
+	s, err := p2p.OpenStream(conn.Receiver, p2p.ConnectProtocolID)
 	if err != nil {
 		return err
 	}
@@ -113,7 +109,7 @@ func requestWitness(conn *p2p.Connection) (string, error) {
 
 		// just try one address
 		addr := addrs[0].String() + "/p2p/" + candidate.String()
-		s, err := openStream(addr, p2p.WitnessProtocolID)
+		s, err := p2p.OpenStream(addr, p2p.WitnessProtocolID)
 		if err != nil {
 			log.Log().Errorf("Error while requesting witness of %s: %s", addr, err)
 			continue
@@ -171,7 +167,7 @@ func notifyReceiverOfWitness(conn *p2p.Connection) error {
 		return errors.New("No witness")
 	}
 
-	s, err := openStream(conn.Receiver, p2p.WitnessNotificationProtocolID)
+	s, err := p2p.OpenStream(conn.Receiver, p2p.WitnessNotificationProtocolID)
 	if err != nil {
 		return err
 	}
@@ -201,7 +197,7 @@ func notifyReceiverOfWitness(conn *p2p.Connection) error {
 }
 
 func sendCloseRequest(conn *p2p.Connection, targetNode string) error {
-	s, err := openStream(targetNode, p2p.CloseProtocolID)
+	s, err := p2p.OpenStream(targetNode, p2p.CloseProtocolID)
 	if err != nil {
 		return err
 	}
@@ -224,14 +220,4 @@ func sendCloseRequest(conn *p2p.Connection, targetNode string) error {
 	}
 
 	return nil
-}
-
-func openStream(targetNode string, protocol protocol.ID) (network.Stream, error) {
-	info, err := p2p.AddPeer(targetNode)
-	if err != nil {
-		return nil, err
-	}
-
-	p2p.GetLibp2pNode().Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
-	return p2p.GetLibp2pNode().NewStream(context.Background(), info.ID, protocol)
 }
