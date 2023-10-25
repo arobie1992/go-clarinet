@@ -8,19 +8,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/go-clarinet/config"
+	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/repository"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -57,6 +59,8 @@ func InitLibp2pNode(config *config.Config) error {
 
 		node.SetStreamHandler(ConnectProtocolID, connectStreamHandler)
 		node.SetStreamHandler(CloseProtocolID, closeStreamHandler)
+		node.SetStreamHandler(WitnessProtocolID, witnessStreamHandler)
+		node.SetStreamHandler(WitnessNotificationProtocolID, witnessNotificationStreamHandler)
 		libp2pNode = node
 		fullAddr = getHostAddress(GetLibp2pNode())
 	})
@@ -99,13 +103,11 @@ func getHostAddress(ha host.Host) string {
 	return addr.Encapsulate(hostAddr).String()
 }
 
-const ConnectProtocolID = "/connect"
-
 func connectStreamHandler(s network.Stream) {
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
-		log.Println(err)
+		log.Log().Errorf("Error reading request: %s", err)
 		s.Reset()
 		return
 	}
@@ -117,8 +119,6 @@ func connectStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
-
-	log.Printf("received: %s\n", req.String())
 
 	conn := CreateIncomingConnection(req.ConnID, s.Conn().RemoteMultiaddr().String())
 	tx := repository.GetDB().Save(&conn)
@@ -132,7 +132,7 @@ func connectStreamHandler(s network.Stream) {
 	resp := ConnectResponse{ConnectResponseStatusAccepted, ConnectResponseRejectReasonNone, ""}
 	_, err = s.Write([]byte(SerializeConnectResponse(resp)))
 	if err != nil {
-		log.Println(err)
+		log.Log().Errorf("Error writing response: %s", err)
 		s.Reset()
 	} else {
 		s.Close()
@@ -196,27 +196,27 @@ func DeserializeConnectRequest(req *ConnectRequest, msg string) error {
 
 	ct, err := strconv.Atoi(parts[0])
 	if err != nil {
-		log.Printf("Failed to parse CT: %s\n", err.Error())
+		log.Log().Errorf("Failed to parse CT: %s", err.Error())
 		return errors.New("Invalid ConnectRequest format: Failed to parse CT.")
 	}
 	if ct != ConnectionTypeConnect && ct != ConnectionTypeSubscribe {
-		log.Printf("Unrecognized CT: %s\n", err.Error())
+		log.Log().Errorf("Unrecognized CT: %s", err.Error())
 		return errors.New("Invalid ConnectRequest format: Unrecognized CT.")
 	}
 
 	ws, err := strconv.Atoi(parts[1])
 	if err != nil {
-		log.Printf("Failed to parse WS: %s\n", err.Error())
+		log.Log().Errorf("Failed to parse WS: %s", err.Error())
 		return errors.New("Invalid ConnectRequest format: Failed to parse WS.")
 	}
 	if ws != WitnessSelectorRequestor && ws != WitnessSelectorTarget {
-		log.Printf("Unrecognized WS: %s\n", err.Error())
+		log.Log().Errorf("Unrecognized WS: %s", err.Error())
 		return errors.New("Invalid ConnectRequest format: Unrecognized WS.")
 	}
 
 	connId, err := uuid.Parse(parts[2])
 	if err != nil {
-		log.Printf("Failed to parse ConnID: %s\n", err.Error())
+		log.Log().Errorf("Failed to parse ConnID: %s", err.Error())
 		return errors.New("Invalid ConnectRequest format: Failed to parse ConnID.")
 	}
 
@@ -292,13 +292,13 @@ func DeserializeConnectResponse(resp *ConnectResponse, msg string) error {
 
 	status, err := strconv.Atoi(parts[0])
 	if err != nil {
-		log.Printf("Failed to parse status: %s\n", err.Error())
+		log.Log().Errorf("Failed to parse status: %s", err.Error())
 		return errors.New("Invalid ConnectResponse format: Failed to parse status.")
 	}
 
 	reason, err := strconv.Atoi(parts[1])
 	if err != nil {
-		log.Printf("Failed to parse reason: %s\n", err.Error())
+		log.Log().Errorf("Failed to parse reason: %s", err.Error())
 		return errors.New("Invalid ConnectResponse format: Failed to parse reason.")
 	}
 
@@ -306,7 +306,7 @@ func DeserializeConnectResponse(resp *ConnectResponse, msg string) error {
 	if errMsg != "" {
 		dec, err := base64.RawStdEncoding.DecodeString(errMsg)
 		if err != nil {
-			log.Printf("Failed to parse errMsg: %s\n", err.Error())
+			log.Log().Errorf("Failed to parse errMsg: %s", err.Error())
 			return errors.New("Invalid ConnectResponse format: Failed to parse errMsg.")
 		}
 		errMsg = string(dec)
@@ -334,7 +334,7 @@ func DeserializeCloseRequest(req *CloseRequest, msg string) error {
 
 	connID, err := uuid.Parse(msg[:len(msg)-1])
 	if err != nil {
-		log.Printf("Failed to parse ConnID: %s\n", err.Error())
+		log.Log().Errorf("Failed to parse ConnID: %s", err.Error())
 		return errors.New("Invalid CloseRequest format: Failed to parse ConnID.")
 	}
 
@@ -361,31 +361,45 @@ func SerializeCloseResponse(resp CloseResponse) string {
 func DeserializeCloseResponse(resp *CloseResponse, msg string) error {
 	termIdx := strings.Index(msg, ";")
 	if termIdx != len(msg)-1 {
-		return errors.New("Invalid ConnectRequest format: No terminating ';'.")
+		return errors.New("Invalid CloseResponse format: No terminating ';'.")
 	}
 
-	status, err := strconv.Atoi(msg[:len(msg)-1])
+	parts := strings.Split(msg[:len(msg)-1], ".")
+	if len(parts) != 2 {
+		return errors.New("Invalid CloseResponse format: Incorrect number of segments.")
+	}
+
+	status, err := strconv.Atoi(parts[0])
 	if err != nil {
-		log.Printf("Failed to parse Status: %s\n", err.Error())
-		return errors.New("Invalid ConnectRequest format: Failed to parse Status.")
+		log.Log().Errorf("Failed to parse Status: %s", err.Error())
+		return errors.New("Invalid CloseResponse format: Failed to parse Status.")
 	}
 
 	if status != CloseResponseStatusSuccess && status != CloseResponseStatusFailure {
-		log.Printf("Unrecognized Status: %s\n", err.Error())
-		return errors.New("Invalid ConnectRequest format: Unrecognized Status.")
+		log.Log().Errorf("Unrecognized Status: %s", err.Error())
+		return errors.New("Invalid CloseResponse format: Unrecognized Status.")
+	}
+
+	failMsg := ""
+	if parts[1] != "" {
+		dec, err := base64.RawStdEncoding.DecodeString(parts[1])
+		if err != nil {
+			log.Log().Errorf("Failed to decode FailMsg: %s", err.Error())
+			return errors.New("Invalid CloseResponse format: Failed to decode FailMsg.")
+		}
+		failMsg = string(dec)
 	}
 
 	resp.Status = CloseResponseStatus(status)
+	resp.FailMsg = failMsg
 	return nil
 }
-
-const CloseProtocolID = "/close"
 
 func closeStreamHandler(s network.Stream) {
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
-		log.Println(err)
+		log.Log().Errorf("Failed to read request: %s", err)
 		s.Reset()
 		return
 	}
@@ -397,8 +411,6 @@ func closeStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
-
-	log.Printf("received: %v\n", req)
 
 	conn := Connection{ID: req.ConnID, Status: ConnectionStatusClosed}
 	tx := repository.GetDB().Save(&conn)
@@ -412,9 +424,24 @@ func closeStreamHandler(s network.Stream) {
 	resp := CloseResponse{CloseResponseStatusSuccess, ""}
 	_, err = s.Write([]byte(SerializeCloseResponse(resp)))
 	if err != nil {
-		log.Println(err)
+		log.Log().Errorf("Failed to write response: %s", err.Error())
 		s.Reset()
 	} else {
 		s.Close()
 	}
+}
+
+func AddPeer(peerAddress string) (*peer.AddrInfo, error) {
+	maddr, err := multiaddr.NewMultiaddr(peerAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := peer.AddrInfoFromP2pAddr(maddr)
+	if err != nil {
+		return nil, err
+	}
+
+	GetLibp2pNode().Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
+	return info, nil
 }

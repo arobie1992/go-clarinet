@@ -44,3 +44,13 @@ func CreateIncomingConnection(connID uuid.UUID, sender string) *Connection {
 		Status:   ConnectionStatusRequestingWitness,
 	}
 }
+
+func CreateWitnessingConnection(connID uuid.UUID, sender, receiver string) *Connection {
+	return &Connection{
+		ID: connID,
+		Sender: sender,
+		Witness: GetFullAddr(),
+		Receiver: receiver,
+		Status: ConnectionStatusOpen,
+	}
+}
