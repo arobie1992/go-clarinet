@@ -9,14 +9,17 @@ import (
 	"github.com/go-clarinet/config"
 	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/p2p"
+	"github.com/google/uuid"
 )
 
 const initiateConnectionPath = "/admin/connect"
 const addPeerPath = "/admin/peer"
+const sendDataPath = "/admin/send"
 
 func StartAdminServer(config *config.Config) error {
 	http.HandleFunc(initiateConnectionPath, initiateConnection)
 	http.HandleFunc(addPeerPath, addPeer)
+	http.HandleFunc(sendDataPath, sendData)
 	log.Log().Info("Starting http server")
 	return http.ListenAndServe(fmt.Sprintf(":%d", config.Admin.Port), nil)
 }
@@ -110,6 +113,37 @@ func addPeer(w http.ResponseWriter, r *http.Request) {
 
 	_, err = p2p.AddPeer(req.PeerAddress)
 	if err != nil {
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to add peer."})
+		return
+	}
+	writeResponse(w, http.StatusOK, nil, nil)
+}
+
+type sendDataRequest struct {
+	ConnID uuid.UUID
+	NumBytes int
+}
+
+func sendData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeResponse(w, http.StatusMethodNotAllowed, map[string]string{"Allow": "POST"}, nil)
+		return
+	}
+
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to read request body."})
+		return
+	}
+
+	var req sendDataRequest
+	err = json.Unmarshal(data, &req)
+	if err != nil {
+		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Invalid body format."})
+		return
+	}
+
+	if err = p2p.SendData(req.ConnID, req.NumBytes); err != nil {
 		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to add peer."})
 		return
 	}

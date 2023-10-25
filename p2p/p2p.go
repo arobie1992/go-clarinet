@@ -61,6 +61,7 @@ func InitLibp2pNode(config *config.Config) error {
 		node.SetStreamHandler(CloseProtocolID, closeStreamHandler)
 		node.SetStreamHandler(WitnessProtocolID, witnessStreamHandler)
 		node.SetStreamHandler(WitnessNotificationProtocolID, witnessNotificationStreamHandler)
+		node.SetStreamHandler(dataProtocolID, dataStreamHandler)
 		libp2pNode = node
 		fullAddr = getHostAddress(GetLibp2pNode())
 	})

@@ -1,7 +1,11 @@
 package p2p
 
 import (
+	"context"
+
 	"github.com/google/uuid"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 type ConnectionStatus int
@@ -19,6 +23,7 @@ type Connection struct {
 	Witness  string
 	Receiver string
 	Status   ConnectionStatus
+	NextSeqNo int
 }
 
 func CreateOutgoingConnection(targetNode string) (*Connection, error) {
@@ -53,4 +58,12 @@ func CreateWitnessingConnection(connID uuid.UUID, sender, receiver string) *Conn
 		Receiver: receiver,
 		Status: ConnectionStatusOpen,
 	}
+}
+
+func OpenStream(targetNode string, protocol protocol.ID) (network.Stream, error) {
+	info, err := AddPeer(targetNode)
+	if err != nil {
+		return nil, err
+	}
+	return GetLibp2pNode().NewStream(context.Background(), info.ID, protocol)
 }
