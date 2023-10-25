@@ -110,7 +110,7 @@ func addPeer(w http.ResponseWriter, r *http.Request) {
 
 	_, err = p2p.AddPeer(req.PeerAddress)
 	if err != nil {
-		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), fmt.Sprintf("Failed to add peer: %s\n", err.Error())})
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to add peer."})
 		return
 	}
 	writeResponse(w, http.StatusOK, nil, nil)

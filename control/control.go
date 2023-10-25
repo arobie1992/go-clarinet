@@ -57,7 +57,7 @@ func requestConnection(targetNode string) error {
 		return tx.Error
 	}
 
-	if err := notifySenderOfWitness(conn); err != nil {
+	if err := notifyReceiverOfWitness(conn); err != nil {
 		conn.Status = p2p.ConnectionStatusClosed
 		repository.GetDB().Save(conn)
 		if err := sendCloseRequest(conn, conn.Receiver); err != nil {
@@ -166,7 +166,7 @@ func getWitnessCandidates(conn *p2p.Connection) []peer.ID {
 	return candidates
 }
 
-func notifySenderOfWitness(conn *p2p.Connection) error {
+func notifyReceiverOfWitness(conn *p2p.Connection) error {
 	if conn.Witness == "" {
 		return errors.New("No witness")
 	}

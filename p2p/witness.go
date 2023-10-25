@@ -126,7 +126,7 @@ func DeserializeWitnessResponse(resp *WitnessResponse, msg []byte) error {
 
 	errMsg := ""
 	if parts[2] != "" {
-		dec, err := base64.RawStdEncoding.DecodeString(parts[3])
+		dec, err := base64.RawStdEncoding.DecodeString(parts[2])
 		if err != nil {
 			log.Log().Errorf("Failed to decode ErrMsg: %s", err.Error())
 			return errors.New("Invalid WitnessResponse format: Failed to decode ErrMsg")
@@ -254,7 +254,7 @@ func DeserializeWitnessNotificationResponse(resp *WitnessNotificationResponse, m
 
 	failMsg := ""
 	if parts[1] != "" {
-		dec, err := base64.RawStdEncoding.DecodeString(parts[3])
+		dec, err := base64.RawStdEncoding.DecodeString(parts[1])
 		if err != nil {
 			log.Log().Errorf("Failed to decode FailMsg: %s", err.Error())
 			return errors.New("Invalid WitnessNotificationResponse format: Failed to decode FailMsg.")
