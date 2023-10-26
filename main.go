@@ -23,7 +23,9 @@ func main() {
 		log.Log().DPanicf("Failed to load configuration: %s", err)
 	}
 
-	cryptography.LoadPrivKeys(config.Libp2p.CertPath)
+	if err := cryptography.LoadPrivKeys(config.Libp2p.CertPath); err != nil {
+		log.Log().DPanicf("Failed to initialize private keys: %s", err)
+	}
 
 	if err := p2p.InitLibp2pNode(config); err != nil {
 		log.Log().DPanicf("Failed to initialize libp2p node: %s", err)
