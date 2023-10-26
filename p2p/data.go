@@ -30,12 +30,12 @@ func SendData(connID uuid.UUID, numBytes int) error {
 	seqNo := conn.NextSeqNo
 	conn.NextSeqNo += 1
 
-	data := DataMessage{connID, seqNo, makeRandomData(numBytes), ""}
+	data := DataMessage{connID, seqNo, makeRandomData(numBytes), "", ""}
 	sig, err := cryptography.Sign(fmt.Sprintf("%s.%d.%s", data.ConnID, data.SeqNo, data.Data))
 	if err != nil {
 		return err
 	}
-	data.Sig = sig
+	data.SendSig = sig
 
 	repository.GetDB().Create(&data)
 
@@ -62,10 +62,11 @@ func makeRandomData(numBytes int) string {
 }
 
 type DataMessage struct {
-	ConnID uuid.UUID
-	SeqNo  int
-	Data   string
-	Sig    string
+	ConnID  uuid.UUID
+	SeqNo   int
+	Data    string
+	SendSig string
+	WitSig  string
 }
 
 func serializeDataMessage(d DataMessage) []byte {
@@ -73,8 +74,12 @@ func serializeDataMessage(d DataMessage) []byte {
 	if d.Data != "" {
 		enc = base64.RawStdEncoding.EncodeToString([]byte(d.Data))
 	}
-	encSig := base64.RawStdEncoding.EncodeToString([]byte(d.Sig))
-	return []byte(fmt.Sprintf("%s.%d.%s.%s;", d.ConnID, d.SeqNo, enc, encSig))
+	encSig := base64.RawStdEncoding.EncodeToString([]byte(d.SendSig))
+	encWit := ""
+	if d.WitSig != "" {
+		encWit = base64.RawStdEncoding.EncodeToString([]byte(d.WitSig))
+	}
+	return []byte(fmt.Sprintf("%s.%d.%s.%s.%s;", d.ConnID, d.SeqNo, enc, encSig, encWit))
 }
 
 func deserializeDataMessage(d *DataMessage, msg string) error {
@@ -84,7 +89,7 @@ func deserializeDataMessage(d *DataMessage, msg string) error {
 	}
 
 	parts := strings.Split(msg[:len(msg)-1], ".")
-	if len(parts) != 4 {
+	if len(parts) != 5 {
 		return errors.New("Invalid DataMessage format: Incorrect number of segments.")
 	}
 
@@ -112,14 +117,25 @@ func deserializeDataMessage(d *DataMessage, msg string) error {
 
 	decSig, err := base64.RawStdEncoding.DecodeString(parts[3])
 	if err != nil {
-		log.Log().Errorf("Failed to decode Sig: %s", err.Error())
-		return errors.New("Invalid DataMessage format: Failed to decode Sig.")
+		log.Log().Errorf("Failed to decode SendSig: %s", err.Error())
+		return errors.New("Invalid DataMessage format: Failed to decode SendSig.")
+	}
+
+	witSig := ""
+	if parts[4] != "" {
+		dec, err := base64.RawStdEncoding.DecodeString(parts[4])
+		if err != nil {
+			log.Log().Errorf("Failed to decode WitSig: %s", err.Error())
+			return errors.New("Invalid DataMessage format: Failed to decode WitSig")
+		}
+		witSig = string(dec)
 	}
 
 	d.ConnID = connID
 	d.SeqNo = seqNo
 	d.Data = data
-	d.Sig = string(decSig)
+	d.SendSig = string(decSig)
+	d.WitSig = witSig
 	return nil
 }
 
@@ -152,32 +168,37 @@ func dataStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
-
-	if tx := repository.GetDB().Create(&d); tx.Error != nil {
-		log.Log().Errorf("Failed to save data message %v: %s", d, err.Error())
-		s.Reset()
-		return
-	}
+	defer repository.GetDB().Create(&d)
 
 	if conn.Receiver == GetFullAddr() {
 		s.Close()
 		return
-	}
-
-	fs, err := OpenStream(conn.Receiver, dataProtocolID)
-	if err != nil {
-		log.Log().Errorf("Failed to open stream to receiver: %s", err.Error())
-		s.Reset()
-		return
-	}
-
-	_, err = fs.Write(serializeDataMessage(d))
-	if err != nil {
-		log.Log().Errorf("Failed to forward data to receiver: %s", err.Error())
-		s.Reset()
-		fs.Reset()
+	} else if conn.Witness == GetFullAddr() {
+		witSig, err := cryptography.Sign(fmt.Sprintf("%s.%d.%s.%s", d.ConnID, d.SeqNo, d.Data, d.SendSig))
+		if err != nil {
+			log.Log().Errorf("Failed to sign data message %s:%d as witness: %s", d.ConnID, d.SeqNo, err.Error())
+			s.Reset()
+			return
+		}
+		d.WitSig = witSig
+	
+		fs, err := OpenStream(conn.Receiver, dataProtocolID)
+		if err != nil {
+			log.Log().Errorf("Failed to open stream to receiver: %s", err.Error())
+			s.Reset()
+			return
+		}
+	
+		_, err = fs.Write(serializeDataMessage(d))
+		if err != nil {
+			log.Log().Errorf("Failed to forward data to receiver: %s", err.Error())
+			s.Reset()
+			fs.Reset()
+		} else {
+			s.Close()
+			fs.Close()
+		}
 	} else {
-		s.Close()
-		fs.Close()
+		log.Log().Warnf("Received DataMessage %d for connection %s on which host is neither witness or receiver.", d.SeqNo, conn.ID)
 	}
 }
