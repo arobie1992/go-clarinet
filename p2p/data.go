@@ -22,10 +22,11 @@ func SendData(connID uuid.UUID, numBytes int) error {
 	if tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
 		return tx.Error
 	}
-	defer repository.GetDB().Save(&conn)
 	if conn.Status != ConnectionStatusOpen {
 		return errors.New(fmt.Sprintf("Connection %s is not open.", connID))
 	}
+	// only save the conn if it's open
+	defer repository.GetDB().Save(&conn)
 
 	seqNo := conn.NextSeqNo
 	conn.NextSeqNo += 1
@@ -210,7 +211,7 @@ func dataStreamHandler(s network.Stream) {
 func verifySenderSig(conn Connection, d DataMessage) {
 	senderKey, err := getPeerKey(conn.Sender)
 	if err != nil {
-		log.Log().Warnf("No available public key for sender on conn %s: %s", conn.ID, err.Error())
+		log.Log().Warnf("No available public key for sender on conn %s: %s", conn.ID, err)
 	} else {
 		valid, err := senderKey.Verify([]byte(fmt.Sprintf("%s.%d.%s", d.ConnID, d.SeqNo, d.Data)), []byte(d.SendSig))
 		if !valid || err != nil {
@@ -222,11 +223,11 @@ func verifySenderSig(conn Connection, d DataMessage) {
 func verifyWitnessSig(conn Connection, d DataMessage) {
 	witKey, err := getPeerKey(conn.Witness)
 	if err != nil {
-		log.Log().Warnf("No available public key for witness on conn %s: %s", conn.ID, err.Error())
+		log.Log().Warnf("No available public key for witness on conn %s: %s", conn.ID, err)
 	} else {
-		valid, err := witKey.Verify([]byte(fmt.Sprintf("%s.%d.%s.%s", d.ConnID, d.SeqNo, d.Data, d.SendSig)), []byte(d.SendSig))
+		valid, err := witKey.Verify([]byte(fmt.Sprintf("%s.%d.%s.%s", d.ConnID, d.SeqNo, d.Data, d.SendSig)), []byte(d.WitSig))
 		if !valid || err != nil {
-			log.Log().Warnf("Message %s:%d had invalid sender signature: %s", conn.ID, d.SeqNo, err)
+			log.Log().Warnf("Message %s:%d had invalid witness signature: %s", conn.ID, d.SeqNo, err)
 		}
 	}
 }

@@ -93,7 +93,8 @@ func connectStreamHandler(s network.Stream) {
 		return
 	}
 
-	conn := CreateIncomingConnection(req.ConnID, s.Conn().RemoteMultiaddr().String())
+	sender := s.Conn().RemoteMultiaddr().String() + "/p2p/" + s.Conn().RemotePeer().String()
+	conn := CreateIncomingConnection(req.ConnID, sender)
 	tx := repository.GetDB().Save(&conn)
 	if tx.Error != nil {
 		resp := ConnectResponse{ConnectResponseStatusRejected, ConnectResponseRejectReasonHasErrors, tx.Error.Error()}
