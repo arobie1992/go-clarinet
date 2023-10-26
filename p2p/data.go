@@ -171,6 +171,8 @@ func dataStreamHandler(s network.Stream) {
 	defer repository.GetDB().Create(&d)
 
 	if conn.Receiver == GetFullAddr() {
+		verifyWitnessSig(conn, d)
+		verifySenderSig(conn, d)
 		s.Close()
 		return
 	} else if conn.Witness == GetFullAddr() {
@@ -182,15 +184,7 @@ func dataStreamHandler(s network.Stream) {
 		}
 		d.WitSig = witSig
 
-		senderKey, err := getPeerKey(conn.Sender)
-		if err != nil {
-			log.Log().Warnf("No available public key for sender on conn %s: %s", conn.ID, err.Error())
-		} else {
-			valid, err := senderKey.Verify([]byte(fmt.Sprintf("%s.%d.%s", d.ConnID, d.SeqNo, d.Data)), []byte(d.SendSig))
-			if !valid || err != nil {
-				log.Log().Warnf("Message %s:%d had invalid sender signature: %s", conn.ID, d.SeqNo, err)
-			}
-		}
+		verifySenderSig(conn, d)
 
 		fs, err := OpenStream(conn.Receiver, dataProtocolID)
 		if err != nil {
@@ -210,5 +204,29 @@ func dataStreamHandler(s network.Stream) {
 		}
 	} else {
 		log.Log().Warnf("Received DataMessage %d for connection %s on which host is neither witness or receiver.", d.SeqNo, conn.ID)
+	}
+}
+
+func verifySenderSig(conn Connection, d DataMessage) {
+	senderKey, err := getPeerKey(conn.Sender)
+	if err != nil {
+		log.Log().Warnf("No available public key for sender on conn %s: %s", conn.ID, err.Error())
+	} else {
+		valid, err := senderKey.Verify([]byte(fmt.Sprintf("%s.%d.%s", d.ConnID, d.SeqNo, d.Data)), []byte(d.SendSig))
+		if !valid || err != nil {
+			log.Log().Warnf("Message %s:%d had invalid sender signature: %s", conn.ID, d.SeqNo, err)
+		}
+	}
+}
+
+func verifyWitnessSig(conn Connection, d DataMessage) {
+	witKey, err := getPeerKey(conn.Witness)
+	if err != nil {
+		log.Log().Warnf("No available public key for witness on conn %s: %s", conn.ID, err.Error())
+	} else {
+		valid, err := witKey.Verify([]byte(fmt.Sprintf("%s.%d.%s.%s", d.ConnID, d.SeqNo, d.Data, d.SendSig)), []byte(d.SendSig))
+		if !valid || err != nil {
+			log.Log().Warnf("Message %s:%d had invalid sender signature: %s", conn.ID, d.SeqNo, err)
+		}
 	}
 }
