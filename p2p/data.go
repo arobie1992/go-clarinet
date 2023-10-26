@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-clarinet/cryptography"
 	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/repository"
 	"github.com/google/uuid"
@@ -29,7 +30,13 @@ func SendData(connID uuid.UUID, numBytes int) error {
 	seqNo := conn.NextSeqNo
 	conn.NextSeqNo += 1
 
-	data := DataMessage{connID, seqNo, makeRandomData(numBytes)}
+	data := DataMessage{connID, seqNo, makeRandomData(numBytes), ""}
+	sig, err := cryptography.Sign(fmt.Sprintf("%s.%d.%s", data.ConnID, data.SeqNo, data.Data))
+	if err != nil {
+		return err
+	}
+	data.Sig = sig
+
 	repository.GetDB().Create(&data)
 
 	s, err := OpenStream(conn.Witness, dataProtocolID)
@@ -58,6 +65,7 @@ type DataMessage struct {
 	ConnID uuid.UUID
 	SeqNo  int
 	Data   string
+	Sig    string
 }
 
 func serializeDataMessage(d DataMessage) []byte {
@@ -65,7 +73,8 @@ func serializeDataMessage(d DataMessage) []byte {
 	if d.Data != "" {
 		enc = base64.RawStdEncoding.EncodeToString([]byte(d.Data))
 	}
-	return []byte(fmt.Sprintf("%s.%d.%s;", d.ConnID, d.SeqNo, enc))
+	encSig := base64.RawStdEncoding.EncodeToString([]byte(d.Sig))
+	return []byte(fmt.Sprintf("%s.%d.%s.%s;", d.ConnID, d.SeqNo, enc, encSig))
 }
 
 func deserializeDataMessage(d *DataMessage, msg string) error {
@@ -75,7 +84,7 @@ func deserializeDataMessage(d *DataMessage, msg string) error {
 	}
 
 	parts := strings.Split(msg[:len(msg)-1], ".")
-	if len(parts) != 3 {
+	if len(parts) != 4 {
 		return errors.New("Invalid DataMessage format: Incorrect number of segments.")
 	}
 
@@ -95,15 +104,22 @@ func deserializeDataMessage(d *DataMessage, msg string) error {
 	if parts[2] != "" {
 		dec, err := base64.RawStdEncoding.DecodeString(parts[2])
 		if err != nil {
-			log.Log().Errorf("Failed to decode sender: %s", err.Error())
-			return errors.New("Invalid DataMessage format: Failed to decode sender.")
+			log.Log().Errorf("Failed to decode Data: %s", err.Error())
+			return errors.New("Invalid DataMessage format: Failed to decode Data.")
 		}
 		data = string(dec)
+	}
+
+	decSig, err := base64.RawStdEncoding.DecodeString(parts[3])
+	if err != nil {
+		log.Log().Errorf("Failed to decode Sig: %s", err.Error())
+		return errors.New("Invalid DataMessage format: Failed to decode Sig.")
 	}
 
 	d.ConnID = connID
 	d.SeqNo = seqNo
 	d.Data = data
+	d.Sig = string(decSig)
 	return nil
 }
 

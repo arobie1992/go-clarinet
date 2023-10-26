@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-clarinet/config"
 	"github.com/go-clarinet/control"
+	"github.com/go-clarinet/cryptography"
 	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/p2p"
 	"github.com/go-clarinet/repository"
@@ -21,6 +22,8 @@ func main() {
 	if err != nil {
 		log.Log().DPanicf("Failed to load configuration: %s", err)
 	}
+
+	cryptography.LoadPrivKeys(config.Libp2p.CertPath)
 
 	if err := p2p.InitLibp2pNode(config); err != nil {
 		log.Log().DPanicf("Failed to initialize libp2p node: %s", err)
