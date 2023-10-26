@@ -2,23 +2,19 @@ package p2p
 
 import (
 	"bufio"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/go-clarinet/config"
+	"github.com/go-clarinet/cryptography"
 	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/repository"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -42,7 +38,7 @@ func GetFullAddr() string {
 func InitLibp2pNode(config *config.Config) error {
 	var retErr error = nil
 	once.Do(func() {
-		priv, err := getKey(config.Libp2p.CertPath)
+		priv, err := cryptography.PrivKey()
 		if err != nil {
 			retErr = err
 			return
@@ -67,32 +63,6 @@ func InitLibp2pNode(config *config.Config) error {
 		fullAddr = getHostAddress(GetLibp2pNode())
 	})
 	return retErr
-}
-
-func getKey(file string) (*crypto.PrivKey, error) {
-	r, err := os.Open(file)
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	block, _ := pem.Decode(data)
-	if block == nil {
-		return nil, errors.New("Invalid key format")
-	}
-
-	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	libp2pKey, _, err := crypto.KeyPairFromStdKey(key)
-
-	return &libp2pKey, nil
 }
 
 func getHostAddress(ha host.Host) string {
@@ -422,7 +392,7 @@ func closeStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
-	
+
 	conn.Status = ConnectionStatusClosed
 	tx = repository.GetDB().Save(&conn)
 	if tx.Error != nil {
