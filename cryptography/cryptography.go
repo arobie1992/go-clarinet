@@ -1,10 +1,7 @@
 package cryptography
 
 import (
-	"crypto"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -60,12 +57,7 @@ func LoadPrivKeys(file string) error {
 }
 
 func Sign(str string) (string, error) {
-	h := sha256.Sum256([]byte(str))
-	pk, err := RSAPrivKey()
-	if err != nil {
-		return "", err
-	}
-	sig, err := rsa.SignPKCS1v15(rand.Reader, pk, crypto.SHA256, h[:])
+	sig, err := (*privKey).Sign([]byte(str))
 	if err != nil {
 		return "", err
 	}
