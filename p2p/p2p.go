@@ -24,6 +24,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/multiformats/go-multiaddr"
+	"gorm.io/gorm/clause"
 )
 
 var libp2pNode host.Host
@@ -413,8 +414,17 @@ func closeStreamHandler(s network.Stream) {
 		return
 	}
 
-	conn := Connection{ID: req.ConnID, Status: ConnectionStatusClosed}
-	tx := repository.GetDB().Save(&conn)
+	conn := Connection{ID: req.ConnID}
+	tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn)
+	if tx.Error != nil {
+		resp := CloseResponse{CloseResponseStatusFailure, err.Error()}
+		s.Write([]byte(SerializeCloseResponse(resp)))
+		s.Reset()
+		return
+	}
+	
+	conn.Status = ConnectionStatusClosed
+	tx = repository.GetDB().Save(&conn)
 	if tx.Error != nil {
 		resp := CloseResponse{CloseResponseStatusFailure, err.Error()}
 		s.Write([]byte(SerializeCloseResponse(resp)))
