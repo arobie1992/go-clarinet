@@ -181,7 +181,17 @@ func dataStreamHandler(s network.Stream) {
 			return
 		}
 		d.WitSig = witSig
-	
+
+		senderKey, err := getPeerKey(conn.Sender)
+		if err != nil {
+			log.Log().Warnf("No available public key for sender on conn %s: %s", conn.ID, err.Error())
+		} else {
+			valid, err := senderKey.Verify([]byte(fmt.Sprintf("%s.%d.%s", d.ConnID, d.SeqNo, d.Data)), []byte(d.SendSig))
+			if !valid || err != nil {
+				log.Log().Warnf("Message %s:%d had invalid sender signature: %s", conn.ID, d.SeqNo, err)
+			}
+		}
+
 		fs, err := OpenStream(conn.Receiver, dataProtocolID)
 		if err != nil {
 			log.Log().Errorf("Failed to open stream to receiver: %s", err.Error())
