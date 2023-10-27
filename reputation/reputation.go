@@ -79,7 +79,7 @@ func Reward(peerAddr string) {
 
 	r := ReputationInfo{peerID, 0, 0}
 	if err := ensureReputationInfoExists(&r); err != nil {
-		log.Log().Errorf("Encountered error ensuring repInfo for %s existed so could not apply penalty: %s", peerAddr, err)
+		log.Log().Errorf("Encountered error ensuring repInfo for %s existed so could not apply reward: %s", peerAddr, err)
 	}
 
 	// use update so the DB applies ACID and properly atomically updates the values
