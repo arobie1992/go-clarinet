@@ -9,6 +9,7 @@ import (
 	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/p2p"
 	"github.com/go-clarinet/repository"
+	"github.com/go-clarinet/reputation"
 )
 
 func main() {
@@ -32,7 +33,7 @@ func main() {
 	}
 	log.Log().Infof("I am %s", p2p.GetFullAddr())
 
-	if err := repository.InitDB(config, &p2p.Connection{}, &p2p.DataMessage{}); err != nil {
+	if err := repository.InitDB(config, &p2p.Connection{}, &p2p.DataMessage{}, &reputation.ReputationInfo{}); err != nil {
 		log.Log().DPanicf("Failed to initialize database: %s", err)
 	}
 
