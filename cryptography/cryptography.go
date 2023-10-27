@@ -1,27 +1,18 @@
 package cryptography
 
 import (
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"io"
 	"os"
 
-	lc "github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/crypto"
 )
 
-var rsaPrivKey *rsa.PrivateKey = nil
-var privKey *lc.PrivKey = nil
+var privKey *crypto.PrivKey = nil
 
-func RSAPrivKey() (*rsa.PrivateKey, error) {
-	if rsaPrivKey == nil {
-		return nil, errors.New("No private key loaded")
-	}
-	return rsaPrivKey, nil
-}
-
-func PrivKey() (*lc.PrivKey, error) {
+func PrivKey() (*crypto.PrivKey, error) {
 	if privKey == nil {
 		return nil, errors.New("No private key loaded")
 	}
@@ -48,9 +39,8 @@ func LoadPrivKeys(file string) error {
 	if err != nil {
 		return err
 	}
-	rsaPrivKey = key.(*rsa.PrivateKey)
 
-	pk, _, err := lc.KeyPairFromStdKey(key)
+	pk, _, err := crypto.KeyPairFromStdKey(key)
 
 	privKey = &pk
 	return nil
