@@ -24,7 +24,7 @@ func main() {
 		log.Log().Fatalf("Failed to load configuration: %s", err)
 	}
 
-	if err := cryptography.LoadPrivKeys(config.Libp2p.CertPath); err != nil {
+	if err := cryptography.LoadPrivKey(config.Libp2p.CertPath); err != nil {
 		log.Log().Fatalf("Failed to initialize private keys: %s", err)
 	}
 

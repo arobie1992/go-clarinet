@@ -19,7 +19,7 @@ func PrivKey() (*crypto.PrivKey, error) {
 	return privKey, nil
 }
 
-func LoadPrivKeys(file string) error {
+func LoadPrivKey(file string) error {
 	r, err := os.Open(file)
 	if err != nil {
 		return err
