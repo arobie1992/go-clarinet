@@ -12,6 +12,7 @@ import (
 	"github.com/go-clarinet/cryptography"
 	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/repository"
+	"github.com/go-clarinet/reputation"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/network"
 	"gorm.io/gorm/clause"
@@ -172,8 +173,7 @@ func dataStreamHandler(s network.Stream) {
 	defer repository.GetDB().Create(&d)
 
 	if conn.Receiver == GetFullAddr() {
-		verifyWitnessSig(conn, d)
-		verifySenderSig(conn, d)
+		receiverReview(conn, d)
 		s.Close()
 		return
 	} else if conn.Witness == GetFullAddr() {
@@ -185,7 +185,7 @@ func dataStreamHandler(s network.Stream) {
 		}
 		d.WitSig = witSig
 
-		verifySenderSig(conn, d)
+		witnessReview(conn, d)
 
 		fs, err := OpenStream(conn.Receiver, dataProtocolID)
 		if err != nil {
@@ -193,7 +193,7 @@ func dataStreamHandler(s network.Stream) {
 			s.Reset()
 			return
 		}
-	
+
 		_, err = fs.Write(serializeDataMessage(d))
 		if err != nil {
 			log.Log().Errorf("Failed to forward data to receiver: %s", err.Error())
@@ -208,26 +208,47 @@ func dataStreamHandler(s network.Stream) {
 	}
 }
 
-func verifySenderSig(conn Connection, d DataMessage) {
-	senderKey, err := getPeerKey(conn.Sender)
-	if err != nil {
-		log.Log().Warnf("No available public key for sender on conn %s: %s", conn.ID, err)
+func witnessReview(conn Connection, d DataMessage) {
+	if validSenderSig(conn, d) {
+		reputation.Reward(conn.Sender)
 	} else {
-		valid, err := senderKey.Verify([]byte(fmt.Sprintf("%s.%d.%s", d.ConnID, d.SeqNo, d.Data)), []byte(d.SendSig))
-		if !valid || err != nil {
-			log.Log().Warnf("Message %s:%d had invalid sender signature: %s", conn.ID, d.SeqNo, err)
-		}
+		reputation.StrongPenalize(conn.Sender)
 	}
 }
 
-func verifyWitnessSig(conn Connection, d DataMessage) {
+func receiverReview(conn Connection, d DataMessage) {
+	penalized := false
+	if !validWitnessSig(conn, d) {
+		reputation.StrongPenalize(conn.Witness)
+		penalized = true
+	}
+	if !validSenderSig(conn, d) {
+		reputation.WeakPenalize(conn.Witness)
+		reputation.WeakPenalize(conn.Sender)
+		penalized = true
+	}
+	if !penalized {
+		reputation.Reward(conn.Witness)
+		reputation.Reward(conn.Sender)
+	}
+}
+
+func validSenderSig(conn Connection, d DataMessage) bool {
+	senderKey, err := getPeerKey(conn.Sender)
+	if err != nil {
+		log.Log().Warnf("No available public key for sender on conn %s: %s", conn.ID, err)
+		return false
+	}
+	valid, err := senderKey.Verify([]byte(fmt.Sprintf("%s.%d.%s", d.ConnID, d.SeqNo, d.Data)), []byte(d.SendSig))
+	return valid && err == nil
+}
+
+func validWitnessSig(conn Connection, d DataMessage) bool {
 	witKey, err := getPeerKey(conn.Witness)
 	if err != nil {
 		log.Log().Warnf("No available public key for witness on conn %s: %s", conn.ID, err)
-	} else {
-		valid, err := witKey.Verify([]byte(fmt.Sprintf("%s.%d.%s.%s", d.ConnID, d.SeqNo, d.Data, d.SendSig)), []byte(d.WitSig))
-		if !valid || err != nil {
-			log.Log().Warnf("Message %s:%d had invalid witness signature: %s", conn.ID, d.SeqNo, err)
-		}
+		return false
 	}
+	valid, err := witKey.Verify([]byte(fmt.Sprintf("%s.%d.%s.%s", d.ConnID, d.SeqNo, d.Data, d.SendSig)), []byte(d.WitSig))
+	return valid && err == nil
 }

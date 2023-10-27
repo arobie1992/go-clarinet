@@ -10,6 +10,7 @@ import (
 	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/p2p"
 	"github.com/go-clarinet/repository"
+	"github.com/go-clarinet/reputation"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -98,7 +99,11 @@ func sendConnectRequest(conn *p2p.Connection) error {
 }
 
 func requestWitness(conn *p2p.Connection) (string, error) {
-	candidates := getWitnessCandidates(conn)
+	candidates, err := getWitnessCandidates(conn)
+	if err != nil {
+		return "", err
+	}
+	
 	for len(candidates) > 0 {
 		candidate := candidates[0]
 		candidates = candidates[1:]
@@ -145,21 +150,28 @@ func requestWitness(conn *p2p.Connection) (string, error) {
 	return "", errors.New("Failed to find witness.")
 }
 
-func getWitnessCandidates(conn *p2p.Connection) []peer.ID {
+func getWitnessCandidates(conn *p2p.Connection) ([]peer.ID, error) {
 	peers := p2p.GetLibp2pNode().Peerstore().Peers()
+	reputations, err := reputation.GetAll(peers)
+	if err != nil {
+		return nil, err
+	}
+
 	candidates := []peer.ID{}
 	for _, p := range peers {
 		if strings.Contains(conn.Receiver, p.String()) || strings.Contains(conn.Sender, p.String()) {
 			continue
 		}
-		candidates = append(candidates, p)
+		if reputations.IsTrusted(p) {
+			candidates = append(candidates, p)
+		}
 	}
 	// shuffle the candidates
 	for i := range candidates {
 		j := rand.Intn(i + 1)
 		candidates[i], candidates[j] = candidates[j], candidates[i]
 	}
-	return candidates
+	return candidates, nil
 }
 
 func notifyReceiverOfWitness(conn *p2p.Connection) error {
