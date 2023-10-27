@@ -85,7 +85,7 @@ func Reward(peerAddr string) {
 	// use update so the DB applies ACID and properly atomically updates the values
 	updates := map[string]interface{}{
 		"good":  gorm.Expr("good + ?", 1),
-		"total": gorm.Expr("good + ?", 1),
+		"total": gorm.Expr("total + ?", 1),
 	}
 	repository.GetDB().Model(&r).Updates(updates)
 }
