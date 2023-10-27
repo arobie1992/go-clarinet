@@ -21,24 +21,24 @@ func main() {
 	}
 	config, err := config.LoadConfig(configPath)
 	if err != nil {
-		log.Log().DPanicf("Failed to load configuration: %s", err)
+		log.Log().Fatalf("Failed to load configuration: %s", err)
 	}
 
 	if err := cryptography.LoadPrivKeys(config.Libp2p.CertPath); err != nil {
-		log.Log().DPanicf("Failed to initialize private keys: %s", err)
+		log.Log().Fatalf("Failed to initialize private keys: %s", err)
 	}
 
 	if err := p2p.InitLibp2pNode(config); err != nil {
-		log.Log().DPanicf("Failed to initialize libp2p node: %s", err)
+		log.Log().Fatalf("Failed to initialize libp2p node: %s", err)
 	}
 	log.Log().Infof("I am %s", p2p.GetFullAddr())
 
 	if err := repository.InitDB(config, &p2p.Connection{}, &p2p.DataMessage{}, &reputation.ReputationInfo{}); err != nil {
-		log.Log().DPanicf("Failed to initialize database: %s", err)
+		log.Log().Fatalf("Failed to initialize database: %s", err)
 	}
 
 	// start a http handler so we have some endpoints to trigger behavior through for testing
 	if err := control.StartAdminServer(config); err != nil {
-		log.Log().DPanicf("Failed to start server: %s", err)
+		log.Log().Fatalf("Failed to start server: %s", err)
 	}
 }
