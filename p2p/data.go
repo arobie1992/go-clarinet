@@ -234,7 +234,7 @@ func receiverReview(conn Connection, d DataMessage) {
 }
 
 func validSenderSig(conn Connection, d DataMessage) bool {
-	senderKey, err := getPeerKey(conn.Sender)
+	senderKey, err := GetPeerKey(conn.Sender)
 	if err != nil {
 		log.Log().Warnf("No available public key for sender on conn %s: %s", conn.ID, err)
 		return false
@@ -244,7 +244,7 @@ func validSenderSig(conn Connection, d DataMessage) bool {
 }
 
 func validWitnessSig(conn Connection, d DataMessage) bool {
-	witKey, err := getPeerKey(conn.Witness)
+	witKey, err := GetPeerKey(conn.Witness)
 	if err != nil {
 		log.Log().Warnf("No available public key for witness on conn %s: %s", conn.ID, err)
 		return false

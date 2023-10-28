@@ -2,15 +2,18 @@ package control
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-clarinet/config"
 	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/p2p"
 	"github.com/go-clarinet/repository"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -18,12 +21,14 @@ const initiateConnectionPath = "/admin/connect"
 const addPeerPath = "/admin/peer"
 const sendDataPath = "/admin/send"
 const closeConnectionPath = "/admin/close"
+const queryPath = "/admin/query"
 
 func StartAdminServer(config *config.Config) error {
 	http.HandleFunc(initiateConnectionPath, initiateConnection)
 	http.HandleFunc(addPeerPath, addPeer)
 	http.HandleFunc(sendDataPath, sendData)
 	http.HandleFunc(closeConnectionPath, closeConnection)
+	http.HandleFunc(queryPath, query)
 	log.Log().Info("Starting http server")
 	return http.ListenAndServe(fmt.Sprintf(":%d", config.Admin.Port), nil)
 }
@@ -124,7 +129,7 @@ func addPeer(w http.ResponseWriter, r *http.Request) {
 }
 
 type sendDataRequest struct {
-	ConnID uuid.UUID
+	ConnID   uuid.UUID
 	NumBytes int
 }
 
@@ -202,4 +207,89 @@ func closeConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeResponse(w, http.StatusOK, nil, nil)
+}
+
+type queryRequest struct {
+	ConnID uuid.UUID
+	SeqNo  int
+	// queryTarget is the node to query for the message. Valid values are "sender", "receiver", "witness". All are case-insensitive.
+	QueryTarget string
+}
+
+func query(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeResponse(w, http.StatusMethodNotAllowed, map[string]string{"Allow": "POST"}, nil)
+		return
+	}
+
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to read request body."})
+		return
+	}
+
+	var req queryRequest
+	err = json.Unmarshal(data, &req)
+	if err != nil {
+		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Invalid body format."})
+		return
+	}
+
+	connID := req.ConnID
+	seqNo := req.SeqNo
+	if seqNo == -1 {
+		d, err := selectRandomMessage()
+		if err != nil {
+			writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Failed to find random message."})
+			return
+		}
+		connID = d.ConnID
+		seqNo = d.SeqNo
+	}
+
+	conn := p2p.Connection{ID: connID, Sender: "", Witness: "", Receiver: "", Status: -1, NextSeqNo: -1}
+	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
+		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Error finding connection."})
+		return
+	}
+	if conn.Status == -1 {
+		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Failed to find connection."})
+		return
+	}
+
+	var nodeAddr string
+	switch strings.ToLower(req.QueryTarget) {
+	case "sender":
+		nodeAddr = conn.Sender
+	case "witness":
+		nodeAddr = conn.Witness
+	case "receiver":
+		nodeAddr = conn.Receiver
+	default:
+		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Invalid query target."})
+		return
+	}
+
+	if nodeAddr == p2p.GetFullAddr() {
+		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{"", "Cannot query self."})
+		return
+	}
+
+	if err := queryForMessage(nodeAddr, conn, seqNo); err != nil {
+		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Error while sending query."})
+		return
+	}
+
+	writeResponse(w, http.StatusOK, nil, nil)
+}
+
+func selectRandomMessage() (p2p.DataMessage, error) {
+	d := p2p.DataMessage{ConnID: uuid.UUID{}, SeqNo: -1, SendSig: "", WitSig: ""}
+	if tx := repository.GetDB().Clauses(clause.OrderBy{Expression: gorm.Expr("random()")}).First(&d); tx.Error != nil {
+		return d, tx.Error
+	}
+	if d.SeqNo == -1 {
+		return d, errors.New("Failed to find any data message.")
+	}
+	return d, nil
 }
