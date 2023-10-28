@@ -103,7 +103,7 @@ func requestWitness(conn *p2p.Connection) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	for len(candidates) > 0 {
 		candidate := candidates[0]
 		candidates = candidates[1:]
@@ -229,6 +229,76 @@ func sendCloseRequest(conn *p2p.Connection, targetNode string) error {
 	var resp p2p.CloseResponse
 	if err := p2p.DeserializeCloseResponse(&resp, string(out)); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func queryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) error {
+	refMsg := p2p.DataMessage{ConnID: conn.ID, SeqNo: seqNo}
+	if tx := repository.GetDB().Find(&refMsg); tx.Error != nil {
+		return tx.Error
+	}
+	if refMsg.Data == "" {
+		return errors.New("Unable to find message.")
+	}
+
+	s, err := p2p.OpenStream(nodeAddr, p2p.QueryProtocolID)
+	if err != nil {
+		return err
+	}
+
+	req := p2p.QueryRequest{ConnID: conn.ID, SeqNo: seqNo}
+	if _, err := s.Write(p2p.SerializeQueryRequest(req)); err != nil {
+		return err
+	}
+
+	out, err := io.ReadAll(s)
+	if err != nil {
+		return err
+	}
+	var resp p2p.QueryResponse
+	if err := p2p.DeserializeQueryResponse(&resp, out); err != nil {
+		return err
+	}
+
+	key, err := p2p.GetPeerKey(nodeAddr)
+	if err != nil {
+		return err
+	}
+	valid, err := key.Verify([]byte(resp.MsgHash), []byte(resp.Sig))
+	if !valid || err != nil {
+		// the signature is invalid so don't even bother checking the message content
+		reputation.StrongPenalize(nodeAddr)
+		return nil
+	}
+
+	if resp.MsgHash == p2p.HashMessage(nodeAddr, conn, refMsg) {
+		reputation.Reward(nodeAddr)
+		return nil
+	}
+
+	if p2p.GetFullAddr() == conn.Witness || nodeAddr == conn.Witness {
+		// witnesses can always apply a strong penalty because they directly communicated with both ends
+		// sender and receiver both communicated directly with the witness so they can also strongly penalize witness
+		reputation.StrongPenalize(nodeAddr)
+		return nil
+	}
+
+	// otherwise this node and the queryied node did not direcctly communicate so need to weakly penalize both
+	otherNodes := []string{}
+	if p2p.GetFullAddr() == conn.Sender {
+		otherNodes = append(otherNodes, conn.Witness, conn.Receiver)
+	} else if p2p.GetFullAddr() == conn.Witness {
+		otherNodes = append(otherNodes, conn.Sender, conn.Receiver)
+	} else if p2p.GetFullAddr() == conn.Receiver {
+		otherNodes = append(otherNodes, conn.Sender, conn.Witness)
+	} else {
+		// this should never happen, so just crash to make it show up ASAP
+		log.Log().Fatalf("Node %s is not sender, witness, or receiver for connection %s", p2p.GetFullAddr(), conn.ID)
+	}
+	for _, n := range otherNodes {
+		reputation.WeakPenalize(n)
 	}
 
 	return nil

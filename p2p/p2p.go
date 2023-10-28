@@ -60,6 +60,7 @@ func InitLibp2pNode(config *config.Config) error {
 		node.SetStreamHandler(WitnessProtocolID, witnessStreamHandler)
 		node.SetStreamHandler(WitnessNotificationProtocolID, witnessNotificationStreamHandler)
 		node.SetStreamHandler(dataProtocolID, dataStreamHandler)
+		node.SetStreamHandler(QueryProtocolID, queryHandler)
 		libp2pNode = node
 		fullAddr = getHostAddress(GetLibp2pNode())
 	})
@@ -429,22 +430,22 @@ func AddPeer(peerAddress string) (*peer.AddrInfo, error) {
 	return info, nil
 }
 
-func getPeerKey(peerAddress string) (crypto.PubKey, error) {
+func GetPeerKey(peerAddress string) (crypto.PubKey, error) {
 	maddr, err := multiaddr.NewMultiaddr(peerAddress)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	nodeID, err := maddr.ValueForProtocol(multiaddr.P_P2P)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	peerID, err := peer.Decode(nodeID)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	key := GetLibp2pNode().Peerstore().PubKey(peerID)
 	if key == nil {
 		return nil, errors.New(fmt.Sprintf("No key for peer %s", peerID))
