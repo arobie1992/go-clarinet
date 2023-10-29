@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"math/rand"
 	"strconv"
 	"strings"
 
@@ -18,7 +17,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func SendData(connID uuid.UUID, numBytes int) error {
+func SendData(connID uuid.UUID, data []byte) error {
 	conn := Connection{ID: connID}
 	if tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
 		return tx.Error
@@ -32,35 +31,27 @@ func SendData(connID uuid.UUID, numBytes int) error {
 	seqNo := conn.NextSeqNo
 	conn.NextSeqNo += 1
 
-	data := DataMessage{connID, seqNo, makeRandomData(numBytes), "", ""}
-	sig, err := cryptography.Sign(fmt.Sprintf("%s.%d.%s", data.ConnID, data.SeqNo, data.Data))
+	d := DataMessage{connID, seqNo, string(data), "", ""}
+	sig, err := cryptography.Sign(fmt.Sprintf("%s.%d.%s", d.ConnID, d.SeqNo, d.Data))
 	if err != nil {
 		return err
 	}
-	data.SendSig = sig
+	d.SendSig = sig
 
-	repository.GetDB().Create(&data)
+	repository.GetDB().Create(&d)
 
 	s, err := OpenStream(conn.Witness, dataProtocolID)
 	if err != nil {
 		return err
 	}
 
-	_, err = s.Write(serializeDataMessage(data))
+	_, err = s.Write(serializeDataMessage(d))
 	if err != nil {
 		s.Reset()
 		return errors.New("Failed to send data: " + err.Error())
 	}
 	s.Close()
 	return nil
-}
-
-func makeRandomData(numBytes int) string {
-	data := make([]byte, numBytes)
-	for i := 0; i < numBytes; i++ {
-		data[i] = byte(rand.Intn(128))
-	}
-	return string(data)
 }
 
 type DataMessage struct {

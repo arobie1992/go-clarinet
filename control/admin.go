@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strings"
 
@@ -64,7 +65,7 @@ func initiateConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Log().Infof("Received request to connect to %s", req.TargetNode)
-	if err := requestConnection(req.TargetNode); err != nil {
+	if err := RequestConnection(req.TargetNode); err != nil {
 		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to request connection."})
 		return
 	}
@@ -154,11 +155,19 @@ func sendData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = p2p.SendData(req.ConnID, req.NumBytes); err != nil {
+	if err = p2p.SendData(req.ConnID, []byte(makeRandomData(req.NumBytes))); err != nil {
 		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to send data."})
 		return
 	}
 	writeResponse(w, http.StatusOK, nil, nil)
+}
+
+func makeRandomData(numBytes int) string {
+	data := make([]byte, numBytes)
+	for i := 0; i < numBytes; i++ {
+		data[i] = byte(rand.Intn(128))
+	}
+	return string(data)
 }
 
 type closeConnectionRequest struct {
@@ -184,28 +193,9 @@ func closeConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn := p2p.Connection{ID: req.ConnID}
-	if tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
-		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to find connection."})
+	if err := CloseConnection(req.ConnID); err != nil {
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Error while closing connection."})
 		return
-	}
-	defer repository.GetDB().Save(&conn)
-
-	if conn.Sender != p2p.GetFullAddr() {
-		writeResponse(w, http.StatusBadRequest, nil, badResp{err.Error(), "Currently only sender may close a connection."})
-		return
-	}
-
-	if conn.Status != p2p.ConnectionStatusClosed {
-		conn.Status = p2p.ConnectionStatusClosed
-		if conn.Witness != "" {
-			if err := sendCloseRequest(&conn, conn.Witness); err != nil {
-				log.Log().Errorf("Close request for %s to witness failed: %s", conn.ID, err.Error())
-			}
-		}
-		if err := sendCloseRequest(&conn, conn.Receiver); err != nil {
-			log.Log().Errorf("Close request for %s to witness failed: %s", conn.ID, err.Error())
-		}
 	}
 
 	writeResponse(w, http.StatusOK, nil, nil)
@@ -277,7 +267,7 @@ func query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := queryForMessage(nodeAddr, conn, seqNo); err != nil {
+	if err := QueryForMessage(nodeAddr, conn, seqNo); err != nil {
 		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Error while sending query."})
 		return
 	}
@@ -325,7 +315,7 @@ func requestPeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := sendRequestPeersRequest(req.TargetNode, req.NumPeers); err != nil {
+	if err := SendRequestPeersRequest(req.TargetNode, req.NumPeers); err != nil {
 		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Error while sending query."})
 		return
 	}

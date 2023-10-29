@@ -12,10 +12,12 @@ import (
 	"github.com/go-clarinet/p2p"
 	"github.com/go-clarinet/repository"
 	"github.com/go-clarinet/reputation"
+	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"gorm.io/gorm/clause"
 )
 
-func requestConnection(targetNode string) error {
+func RequestConnection(targetNode string) error {
 	// create the logical connection
 	conn, err := p2p.CreateOutgoingConnection(targetNode)
 	if err != nil {
@@ -235,7 +237,7 @@ func sendCloseRequest(conn *p2p.Connection, targetNode string) error {
 	return nil
 }
 
-func queryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) error {
+func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) error {
 	refMsg := p2p.DataMessage{ConnID: conn.ID, SeqNo: seqNo}
 	if tx := repository.GetDB().Find(&refMsg); tx.Error != nil {
 		return tx.Error
@@ -334,7 +336,7 @@ func forwardQueryResponse(d p2p.DataMessage, resp p2p.QueryResponse, queriedNode
 	return err
 }
 
-func sendRequestPeersRequest(targetNode string, numPeers int) error {
+func SendRequestPeersRequest(targetNode string, numPeers int) error {
 	s, err := p2p.OpenStream(targetNode, p2p.RequestPeersProtocolID)
 	if err != nil {
 		return err
@@ -365,5 +367,64 @@ func sendRequestPeersRequest(targetNode string, numPeers int) error {
 		p2p.AddPeer(addr)
 	}
 
+	return nil
+}
+
+type CloseError struct {
+	Err           error
+	SenderError   error
+	WitnessError  error
+	ReceiverError error
+}
+
+func (ce *CloseError) Error() string {
+	return fmt.Sprintf("Err: %s, SenderError; %s, WitnessError: %s, ReceiverError: %s", ce.Err, ce.SenderError, ce.WitnessError, ce.ReceiverError)
+}
+
+func CloseConnection(connID uuid.UUID) *CloseError {
+	conn := p2p.Connection{ID: connID}
+	if tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
+		return &CloseError{
+			Err: errors.New(fmt.Sprintf("Failed to find connection: %s", tx.Error)),
+		}
+	}
+	defer repository.GetDB().Save(&conn)
+
+	if conn.Status == p2p.ConnectionStatusClosed {
+		// already closed so just honor the previous close
+		return nil
+	}
+
+	var sendErr error = nil
+	var witErr error = nil
+	var recErr error = nil
+
+	conn.Status = p2p.ConnectionStatusClosed
+	for i, p := range conn.Participants() {
+		if p == p2p.GetFullAddr() || p == "" {
+			// skip self
+			continue
+		}
+		if err := sendCloseRequest(&conn, p); err != nil {
+			switch i {
+			case 0:
+				sendErr = err
+			case 1:
+				witErr = err
+			case 3:
+				recErr = err
+			default:
+				log.Log().Fatalf("Connection %s has too many participants.", conn.ID)
+			}
+		}
+	}
+
+	if sendErr != nil || witErr != nil || recErr != nil {
+		return &CloseError{
+			SenderError:   sendErr,
+			WitnessError:  witErr,
+			ReceiverError: recErr,
+		}
+	}
 	return nil
 }
