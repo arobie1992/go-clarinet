@@ -26,6 +26,10 @@ type Connection struct {
 	NextSeqNo int
 }
 
+func (c *Connection) Participants() []string {
+	return []string{c.Sender, c.Witness, c.Receiver}
+}
+
 func CreateOutgoingConnection(targetNode string) (*Connection, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
