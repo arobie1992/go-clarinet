@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/go-clarinet/cryptography"
 	"github.com/go-clarinet/log"
 	"github.com/go-clarinet/p2p"
 	"github.com/go-clarinet/repository"
@@ -247,6 +248,7 @@ func queryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) error {
 	if err != nil {
 		return err
 	}
+	defer s.Close()
 
 	req := p2p.QueryRequest{ConnID: conn.ID, SeqNo: seqNo}
 	if _, err := s.Write(p2p.SerializeQueryRequest(req)); err != nil {
@@ -273,8 +275,13 @@ func queryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) error {
 		return nil
 	}
 
-	if resp.MsgHash == p2p.HashMessage(nodeAddr, conn, refMsg) {
+	if resp.MsgHash == p2p.HashMessage(refMsg) {
 		reputation.Reward(nodeAddr)
+		forwardTarget := filter(conn.Participants(), p2p.GetFullAddr(), nodeAddr)[0]
+		if err := forwardQueryResponse(refMsg, resp, nodeAddr, forwardTarget); err != nil {
+			log.Log().Errorf("Failed to forward data message %s:%d query response to %s", req.ConnID, req.SeqNo, forwardTarget)
+			return err
+		}
 		return nil
 	}
 
@@ -286,20 +293,43 @@ func queryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) error {
 	}
 
 	// otherwise this node and the queryied node did not direcctly communicate so need to weakly penalize both
-	otherNodes := []string{}
-	if p2p.GetFullAddr() == conn.Sender {
-		otherNodes = append(otherNodes, conn.Witness, conn.Receiver)
-	} else if p2p.GetFullAddr() == conn.Witness {
-		otherNodes = append(otherNodes, conn.Sender, conn.Receiver)
-	} else if p2p.GetFullAddr() == conn.Receiver {
-		otherNodes = append(otherNodes, conn.Sender, conn.Witness)
-	} else {
-		// this should never happen, so just crash to make it show up ASAP
-		log.Log().Fatalf("Node %s is not sender, witness, or receiver for connection %s", p2p.GetFullAddr(), conn.ID)
-	}
+	otherNodes := filter(conn.Participants(), p2p.GetFullAddr())
 	for _, n := range otherNodes {
 		reputation.WeakPenalize(n)
 	}
 
 	return nil
+}
+
+func filter(vals []string, exclusions ...string) []string {
+	filtered := []string{}
+	for _, v := range vals {
+		shouldInclude := true
+		for _, e := range exclusions {
+			if v == e {
+				shouldInclude = false
+				break
+			}
+		}
+		if shouldInclude {
+			filtered = append(filtered, v)
+		}
+	}
+	return filtered
+}
+
+func forwardQueryResponse(d p2p.DataMessage, resp p2p.QueryResponse, queriedNodeAddr, forwardNodeAddr string) error {
+	s, err := p2p.OpenStream(forwardNodeAddr, p2p.ForwardProtocolID)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	fwdSig, err := cryptography.Sign(fmt.Sprintf("%s.%d.%s.%s.%s", d.ConnID, d.SeqNo, resp.MsgHash, resp.Sig, queriedNodeAddr))
+	if err != nil {
+		return err
+	}
+	f := p2p.QueryForward{ConnID: d.ConnID, SeqNo: d.SeqNo, MsgHash: resp.MsgHash, Sig: resp.Sig, Queried: queriedNodeAddr, FwdSig: fwdSig}
+	_, err = s.Write(p2p.SerializeQueryForward(f))
+	return err
 }
