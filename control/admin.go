@@ -22,6 +22,7 @@ const addPeerPath = "/admin/peer"
 const sendDataPath = "/admin/send"
 const closeConnectionPath = "/admin/close"
 const queryPath = "/admin/query"
+const requestPeersPath = "/admin/request-peers"
 
 func StartAdminServer(config *config.Config) error {
 	http.HandleFunc(initiateConnectionPath, initiateConnection)
@@ -29,6 +30,7 @@ func StartAdminServer(config *config.Config) error {
 	http.HandleFunc(sendDataPath, sendData)
 	http.HandleFunc(closeConnectionPath, closeConnection)
 	http.HandleFunc(queryPath, query)
+	http.HandleFunc(requestPeersPath, requestPeers)
 	log.Log().Info("Starting http server")
 	return http.ListenAndServe(fmt.Sprintf(":%d", config.Admin.Port), nil)
 }
@@ -184,13 +186,13 @@ func closeConnection(w http.ResponseWriter, r *http.Request) {
 
 	conn := p2p.Connection{ID: req.ConnID}
 	if tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
-		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Failed to find connection."})
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to find connection."})
 		return
 	}
 	defer repository.GetDB().Save(&conn)
 
 	if conn.Sender != p2p.GetFullAddr() {
-		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Currently only sender may close a connection."})
+		writeResponse(w, http.StatusBadRequest, nil, badResp{err.Error(), "Currently only sender may close a connection."})
 		return
 	}
 
@@ -240,7 +242,7 @@ func query(w http.ResponseWriter, r *http.Request) {
 	if seqNo == -1 {
 		d, err := selectRandomMessage()
 		if err != nil {
-			writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Failed to find random message."})
+			writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to find random message."})
 			return
 		}
 		connID = d.ConnID
@@ -249,11 +251,11 @@ func query(w http.ResponseWriter, r *http.Request) {
 
 	conn := p2p.Connection{ID: connID, Sender: "", Witness: "", Receiver: "", Status: -1, NextSeqNo: -1}
 	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
-		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Error finding connection."})
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Error finding connection."})
 		return
 	}
 	if conn.Status == -1 {
-		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Failed to find connection."})
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to find connection."})
 		return
 	}
 
@@ -271,12 +273,12 @@ func query(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if nodeAddr == p2p.GetFullAddr() {
-		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{"", "Cannot query self."})
+		writeResponse(w, http.StatusBadRequest, nil, badResp{"", "Cannot query self."})
 		return
 	}
 
 	if err := queryForMessage(nodeAddr, conn, seqNo); err != nil {
-		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Error while sending query."})
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Error while sending query."})
 		return
 	}
 
@@ -292,4 +294,41 @@ func selectRandomMessage() (p2p.DataMessage, error) {
 		return d, errors.New("Failed to find any data message.")
 	}
 	return d, nil
+}
+
+type requestPeersRequest struct {
+	TargetNode string
+	NumPeers   int
+}
+
+func requestPeers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeResponse(w, http.StatusMethodNotAllowed, map[string]string{"Allow": "POST"}, nil)
+		return
+	}
+
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to read request body."})
+		return
+	}
+
+	var req requestPeersRequest
+	err = json.Unmarshal(data, &req)
+	if err != nil {
+		writeResponse(w, http.StatusUnprocessableEntity, nil, badResp{err.Error(), "Invalid body format."})
+		return
+	}
+
+	if req.TargetNode == p2p.GetFullAddr() {
+		writeResponse(w, http.StatusBadRequest, nil, badResp{"", "Cannot request peers from self."})
+		return
+	}
+
+	if err := sendRequestPeersRequest(req.TargetNode, req.NumPeers); err != nil {
+		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Error while sending query."})
+		return
+	}
+
+	writeResponse(w, http.StatusOK, nil, nil)
 }

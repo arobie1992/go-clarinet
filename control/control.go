@@ -333,3 +333,37 @@ func forwardQueryResponse(d p2p.DataMessage, resp p2p.QueryResponse, queriedNode
 	_, err = s.Write(p2p.SerializeQueryForward(f))
 	return err
 }
+
+func sendRequestPeersRequest(targetNode string, numPeers int) error {
+	s, err := p2p.OpenStream(targetNode, p2p.RequestPeersProtocolID)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	req := p2p.RequestPeersRequest{NumPeers: numPeers}
+	_, err = s.Write(p2p.SerializeRequestPeersRequest(req))
+	if err != nil {
+		return err
+	}
+
+	out, err := io.ReadAll(s)
+	if err != nil {
+		return err
+	}
+	resp := p2p.RequestPeersResponse{}
+	if err := p2p.DeserializeRequestPeersResponse(&resp, out); err != nil {
+		return err
+	}
+
+	for i, addr := range resp.PeerAddrs {
+		if i == numPeers {
+			log.Log().Warnf("Peer %s sent back more peers than requested. Skipping remaining. Requested %d, Got %d", numPeers, targetNode)
+			break
+		}
+		log.Log().Infof("Adding peer: %s", addr)
+		p2p.AddPeer(addr)
+	}
+
+	return nil
+}

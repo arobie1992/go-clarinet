@@ -8,4 +8,5 @@ const (
 	dataProtocolID                = "/data"
 	QueryProtocolID               = "/query"
 	ForwardProtocolID             = "/forward"
+	RequestPeersProtocolID        = "/peers"
 )
