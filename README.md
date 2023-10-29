@@ -19,6 +19,7 @@ currently detected through cryptographic signatures and data comparisons.
 - https://github.com/libp2p/go-libp2p
 - https://gorm.io/
 - https://www.sqlite.org/index.html
+- https://github.com/uber-go/zap
 
 #### Generating a private key
 The application requires a private key to give the libp2p node its identity. You can use `scripts/create-cert.sh`
