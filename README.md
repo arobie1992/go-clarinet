@@ -52,6 +52,9 @@ Starts the Clarinet Node. The `configPath` parameter can point to a file contain
 an empty string is provided, the library will search for a file named `config.json` in the current directory.
 See the [Configuration](#configuration) section for details on the available options.
 
+This is a blocking operation, so you may want to run it as a goroutine if you wish to perform other actions
+in the same calling thread.
+
 #### Add Peer
 `p2p.AddPeer(peerAddress string)`
 
