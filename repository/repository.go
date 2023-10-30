@@ -3,7 +3,7 @@ package repository
 import (
 	"sync"
 
-	"github.com/go-clarinet/config"
+	"github.com/arobie1992/go-clarinet/config"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

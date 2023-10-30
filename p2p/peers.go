@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-clarinet/log"
+	"github.com/arobie1992/go-clarinet/log"
 	"github.com/libp2p/go-libp2p/core/network"
 )
 

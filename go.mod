@@ -1,4 +1,4 @@
-module github.com/go-clarinet
+module github.com/arobie1992/go-clarinet
 
 go 1.21.1
 

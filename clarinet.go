@@ -4,13 +4,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/go-clarinet/config"
-	"github.com/go-clarinet/control"
-	"github.com/go-clarinet/cryptography"
-	"github.com/go-clarinet/log"
-	"github.com/go-clarinet/p2p"
-	"github.com/go-clarinet/repository"
-	"github.com/go-clarinet/reputation"
+	"github.com/arobie1992/go-clarinet/config"
+	"github.com/arobie1992/go-clarinet/control"
+	"github.com/arobie1992/go-clarinet/cryptography"
+	"github.com/arobie1992/go-clarinet/log"
+	"github.com/arobie1992/go-clarinet/p2p"
+	"github.com/arobie1992/go-clarinet/repository"
+	"github.com/arobie1992/go-clarinet/reputation"
 )
 
 func Start(configPath string) error {

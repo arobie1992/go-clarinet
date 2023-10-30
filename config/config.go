@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/go-clarinet/log"
+	"github.com/arobie1992/go-clarinet/log"
 )
 
 type libp2pConfig struct {

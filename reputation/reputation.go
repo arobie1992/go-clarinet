@@ -5,8 +5,8 @@ import (
 	"math"
 	"reflect"
 
-	"github.com/go-clarinet/log"
-	"github.com/go-clarinet/repository"
+	"github.com/arobie1992/go-clarinet/log"
+	"github.com/arobie1992/go-clarinet/repository"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/mattn/go-sqlite3"
 	"github.com/multiformats/go-multiaddr"

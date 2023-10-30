@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-clarinet/cryptography"
-	"github.com/go-clarinet/log"
-	"github.com/go-clarinet/repository"
-	"github.com/go-clarinet/reputation"
+	"github.com/arobie1992/go-clarinet/cryptography"
+	"github.com/arobie1992/go-clarinet/log"
+	"github.com/arobie1992/go-clarinet/repository"
+	"github.com/arobie1992/go-clarinet/reputation"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/network"
 )
