@@ -37,7 +37,10 @@ func LoadPrivKey(file string) error {
 
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		return err
+		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			return errors.New("Provided Key was neither PKCS1 nor PKCS8. Please use one of those formats.")
+		}
 	}
 
 	pk, _, err := crypto.KeyPairFromStdKey(key)
