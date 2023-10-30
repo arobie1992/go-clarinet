@@ -16,6 +16,8 @@ sure of the origin. It applies StrongPenalize only to the node that is the origi
 currently detected through cryptographic signatures and data comparisons.
 
 ## Libraries used:
+These are for reference purposes. Since this project uses Go modules, the typical Go build and run commands should
+handle installation and linking.
 - https://github.com/libp2p/go-libp2p
 - https://gorm.io/
 - https://www.sqlite.org/index.html
