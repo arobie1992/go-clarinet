@@ -21,8 +21,10 @@ func Start(configPath string) error {
 		return errors.New(fmt.Sprintf("Failed to load configuration: %s", err))
 	}
 
-	if err := cryptography.LoadPrivKey(config.Libp2p.CertPath); err != nil {
-		return errors.New(fmt.Sprintf("Failed to initialize private keys: %s", err))
+	if config.Libp2p.CertPath != "" {
+		if err := cryptography.LoadPrivKey(config.Libp2p.CertPath); err != nil {
+			return errors.New(fmt.Sprintf("Failed to initialize private keys: %s", err))
+		}	
 	}
 
 	if err := p2p.InitLibp2pNode(config); err != nil {

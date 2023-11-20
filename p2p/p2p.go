@@ -39,20 +39,33 @@ func GetFullAddr() string {
 func InitLibp2pNode(config *config.Config) error {
 	var retErr error = nil
 	once.Do(func() {
-		priv, err := cryptography.PrivKey()
-		if err != nil {
-			retErr = err
-			return
-		}
-
-		node, err := libp2p.New(
-			libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/127.0.0.1/udp/%d/quic-v1", config.Libp2p.Port)),
-			libp2p.Identity(*priv),
-			libp2p.DisableRelay(),
-		)
-		if err != nil {
-			retErr = err
-			return
+		var node host.Host
+		var err error
+		if config.Libp2p.CertPath != "" {
+			priv, err := cryptography.PrivKey()
+			if err != nil {
+				retErr = err
+				return
+			}
+			node, err = libp2p.New(
+				libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/127.0.0.1/udp/%d/quic-v1", config.Libp2p.Port)),
+				libp2p.Identity(*priv),
+				libp2p.DisableRelay(),
+			)
+			if err != nil {
+				retErr = err
+				return
+			}
+		} else {
+			node, err = libp2p.New(
+				libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/127.0.0.1/udp/%d/quic-v1", config.Libp2p.Port)),
+				libp2p.DisableRelay(),
+			)
+			if err != nil {
+				retErr = err
+				return
+			}	
+			cryptography.InitPrivKeyFromNode(node, getHostAddress(node))
 		}
 
 		node.SetStreamHandler(ConnectProtocolID, connectStreamHandler)
