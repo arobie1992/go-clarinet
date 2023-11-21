@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,6 +42,17 @@ func InitLibp2pNode(config *config.Config) error {
 	once.Do(func() {
 		var node host.Host
 		var err error
+		host := config.Libp2p.Host
+		if host == "" {
+			host, err = os.Hostname()
+			if err != nil {
+				retErr = err
+				return
+			}
+		}
+
+		addr := fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", host, config.Libp2p.Port)
+
 		if config.Libp2p.CertPath != "" {
 			priv, err := cryptography.PrivKey()
 			if err != nil {
@@ -48,7 +60,7 @@ func InitLibp2pNode(config *config.Config) error {
 				return
 			}
 			node, err = libp2p.New(
-				libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/127.0.0.1/udp/%d/quic-v1", config.Libp2p.Port)),
+				libp2p.ListenAddrStrings(addr),
 				libp2p.Identity(*priv),
 				libp2p.DisableRelay(),
 			)
@@ -58,7 +70,7 @@ func InitLibp2pNode(config *config.Config) error {
 			}
 		} else {
 			node, err = libp2p.New(
-				libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/127.0.0.1/udp/%d/quic-v1", config.Libp2p.Port)),
+				libp2p.ListenAddrStrings(addr),
 				libp2p.DisableRelay(),
 			)
 			if err != nil {
