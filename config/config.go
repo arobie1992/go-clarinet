@@ -8,6 +8,7 @@ import (
 )
 
 type libp2pConfig struct {
+	Host     string
 	Port     int
 	CertPath string
 	DbPath   string

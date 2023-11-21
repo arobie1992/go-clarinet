@@ -1,5 +1,6 @@
 {
     "libp2p": {
+        "host": "localhost",
         "port": 4432,
         "certPath": ".scratch/somenode/privatekey.pem",
         "dbPath": ".scratch/somenode/db.db"
