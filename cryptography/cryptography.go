@@ -4,10 +4,14 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 )
 
 var privKey *crypto.PrivKey = nil
@@ -46,6 +50,30 @@ func LoadPrivKey(file string) error {
 	pk, _, err := crypto.KeyPairFromStdKey(key)
 
 	privKey = &pk
+	return nil
+}
+
+func InitPrivKeyFromNode(node host.Host, selfAddr string) error {
+	maddr, err := multiaddr.NewMultiaddr(selfAddr)
+	if err != nil {
+		return err
+	}
+
+	nodeID, err := maddr.ValueForProtocol(multiaddr.P_P2P)
+	if err != nil {
+		return err
+	}
+
+	peerID, err := peer.Decode(nodeID)
+	if err != nil {
+		return err
+	}
+
+	key := node.Peerstore().PrivKey(peerID)
+	if key == nil {
+		return errors.New(fmt.Sprintf("No key for peer %s", peerID))
+	}
+	privKey = &key
 	return nil
 }
 
