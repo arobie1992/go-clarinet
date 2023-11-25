@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -42,16 +43,28 @@ func InitLibp2pNode(config *config.Config) error {
 	once.Do(func() {
 		var node host.Host
 		var err error
-		host := config.Libp2p.Host
-		if host == "" {
-			host, err = os.Hostname()
+		hostIp := config.Libp2p.Host
+		if hostIp == "" {
+			host, err := os.Hostname()
 			if err != nil {
 				retErr = err
 				return
 			}
+			addrs, err := net.LookupHost(host)
+			if err != nil {
+				retErr = err
+				return
+			}
+			for _, addr := range addrs {
+				if net.ParseIP(addr).IsLoopback() {
+					continue
+				}
+				hostIp = addr
+				break
+			}
 		}
 
-		addr := fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", host, config.Libp2p.Port)
+		addr := fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", hostIp, config.Libp2p.Port)
 
 		if config.Libp2p.CertPath != "" {
 			priv, err := cryptography.PrivKey()
