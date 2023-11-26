@@ -35,7 +35,7 @@ func (a *AggregateReputations) IsTrusted(peerID peer.ID) bool {
 		// we haven't seen them before and we default to assuming they're trustworthy
 		return true
 	}
-	return r.value() > 0.5 && (r.value() > a.mean-a.stdev)
+	return r.value() > 0.5 && (r.value() >= a.mean-a.stdev)
 }
 
 func GetAll(peers peer.IDSlice) (AggregateReputations, error) {

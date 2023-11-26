@@ -153,7 +153,7 @@ func witnessStreamHandler(s network.Stream) {
 	if err := DeserializeWitnessRequest(&req, str); err != nil {
 		resp := WitnessResponse{ConnectResponseStatusRejected, WitnessResponseRejectReasonHasErrors, err.Error()}
 		s.Write(SerializeWitnessResponse(resp))
-		s.Reset()
+		s.Close()
 		return
 	}
 
@@ -162,7 +162,7 @@ func witnessStreamHandler(s network.Stream) {
 	if tx.Error != nil {
 		resp := WitnessResponse{WitnessResponseStatusRejected, WitnessResponseRejectReasonHasErrors, tx.Error.Error()}
 		s.Write(SerializeWitnessResponse(resp))
-		s.Reset()
+		s.Close()
 		return
 	}
 
@@ -280,7 +280,7 @@ func witnessNotificationStreamHandler(s network.Stream) {
 	if err := DeserializeWitnessNotification(&req, str); err != nil {
 		resp := WitnessNotificationResponse{WitnessNotificationStatusFailure, err.Error()}
 		s.Write(SerializeWitnessNotificationResponse(resp))
-		s.Reset()
+		s.Close()
 		return
 	}
 
@@ -288,7 +288,7 @@ func witnessNotificationStreamHandler(s network.Stream) {
 	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
 		resp := WitnessNotificationResponse{WitnessNotificationStatusFailure, tx.Error.Error()}
 		s.Write(SerializeWitnessNotificationResponse(resp))
-		s.Reset()
+		s.Close()
 		return
 	}
 
@@ -297,7 +297,7 @@ func witnessNotificationStreamHandler(s network.Stream) {
 	if tx := repository.GetDB().Save(&conn); tx.Error != nil {
 		resp := WitnessNotificationResponse{WitnessNotificationStatusFailure, tx.Error.Error()}
 		s.Write(SerializeWitnessNotificationResponse(resp))
-		s.Reset()
+		s.Close()
 		return
 	}
 

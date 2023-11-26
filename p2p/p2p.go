@@ -130,7 +130,7 @@ func connectStreamHandler(s network.Stream) {
 	if err := DeserializeConnectRequest(&req, str); err != nil {
 		resp := ConnectResponse{ConnectResponseStatusRejected, ConnectResponseRejectReasonHasErrors, err.Error()}
 		s.Write([]byte(SerializeConnectResponse(resp)))
-		s.Reset()
+		s.Close()
 		return
 	}
 
@@ -140,7 +140,7 @@ func connectStreamHandler(s network.Stream) {
 	if tx.Error != nil {
 		resp := ConnectResponse{ConnectResponseStatusRejected, ConnectResponseRejectReasonHasErrors, tx.Error.Error()}
 		s.Write([]byte(SerializeConnectResponse(resp)))
-		s.Reset()
+		s.Close()
 		return
 	}
 
@@ -423,7 +423,7 @@ func closeStreamHandler(s network.Stream) {
 	if err := DeserializeCloseRequest(&req, str); err != nil {
 		resp := CloseResponse{CloseResponseStatusFailure, err.Error()}
 		s.Write([]byte(SerializeCloseResponse(resp)))
-		s.Reset()
+		s.Close()
 		return
 	}
 
@@ -432,7 +432,7 @@ func closeStreamHandler(s network.Stream) {
 	if tx.Error != nil {
 		resp := CloseResponse{CloseResponseStatusFailure, err.Error()}
 		s.Write([]byte(SerializeCloseResponse(resp)))
-		s.Reset()
+		s.Close()
 		return
 	}
 
@@ -441,7 +441,7 @@ func closeStreamHandler(s network.Stream) {
 	if tx.Error != nil {
 		resp := CloseResponse{CloseResponseStatusFailure, err.Error()}
 		s.Write([]byte(SerializeCloseResponse(resp)))
-		s.Reset()
+		s.Close()
 		return
 	}
 
