@@ -65,7 +65,7 @@ func initiateConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Log().Infof("Received request to connect to %s", req.TargetNode)
-	if err := RequestConnection(req.TargetNode); err != nil {
+	if _, err := RequestConnection(req.TargetNode); err != nil {
 		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Failed to request connection."})
 		return
 	}
@@ -267,7 +267,7 @@ func query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := QueryForMessage(nodeAddr, conn, seqNo); err != nil {
+	if _, _, err := QueryForMessage(nodeAddr, conn, seqNo); err != nil {
 		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Error while sending query."})
 		return
 	}

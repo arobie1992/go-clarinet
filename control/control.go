@@ -17,11 +17,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func RequestConnection(targetNode string) error {
+func RequestConnection(targetNode string) (uuid.UUID, error) {
 	// create the logical connection
 	conn, err := p2p.CreateOutgoingConnection(targetNode)
 	if err != nil {
-		return err
+		return uuid.UUID{}, err
 	}
 
 	if err := sendConnectRequest(conn); err != nil {
@@ -30,7 +30,7 @@ func RequestConnection(targetNode string) error {
 		if err := sendCloseRequest(conn, conn.Receiver); err != nil {
 			log.Log().Errorf("Close request failed: %s", err.Error())
 		}
-		return err
+		return uuid.UUID{}, err
 	}
 
 	log.Log().Infof("Successfully connected to %s", conn.Receiver)
@@ -38,7 +38,7 @@ func RequestConnection(targetNode string) error {
 	tx := repository.GetDB().Save(conn)
 	if tx.Error != nil {
 		// TODO decide on how to handle failure to save
-		return tx.Error
+		return uuid.UUID{}, tx.Error
 	}
 
 	witness, err := requestWitness(conn)
@@ -48,13 +48,13 @@ func RequestConnection(targetNode string) error {
 		if err := sendCloseRequest(conn, conn.Receiver); err != nil {
 			log.Log().Errorf("Close request failed: %s", err.Error())
 		}
-		return err
+		return uuid.UUID{}, err
 	}
 	conn.Witness = witness
 	conn.Status = p2p.ConnectionStatusOpen
 	if tx := repository.GetDB().Save(conn); tx.Error != nil {
 		// TODO decide on how to handle failure to save
-		return tx.Error
+		return uuid.UUID{}, tx.Error
 	}
 
 	if err := notifyReceiverOfWitness(conn); err != nil {
@@ -66,10 +66,10 @@ func RequestConnection(targetNode string) error {
 		if err := sendCloseRequest(conn, conn.Witness); err != nil {
 			log.Log().Errorf("Close request failed: %s", err.Error())
 		}
-		return err
+		return uuid.UUID{}, err
 	}
 
-	return nil
+	return conn.ID, nil
 }
 
 func sendConnectRequest(conn *p2p.Connection) error {
@@ -237,44 +237,44 @@ func sendCloseRequest(conn *p2p.Connection, targetNode string) error {
 	return nil
 }
 
-func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) error {
+func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) ([]byte, []byte, error) {
 	refMsg := p2p.DataMessage{ConnID: conn.ID, SeqNo: seqNo}
 	if tx := repository.GetDB().Find(&refMsg); tx.Error != nil {
-		return tx.Error
+		return []byte{}, []byte{}, tx.Error
 	}
 	if refMsg.Data == "" {
-		return errors.New("Unable to find message.")
+		return []byte{}, []byte{}, errors.New("Unable to find message.")
 	}
 
 	s, err := p2p.OpenStream(nodeAddr, p2p.QueryProtocolID)
 	if err != nil {
-		return err
+		return []byte{}, []byte{}, err
 	}
 	defer s.Close()
 
 	req := p2p.QueryRequest{ConnID: conn.ID, SeqNo: seqNo}
 	if _, err := s.Write(p2p.SerializeQueryRequest(req)); err != nil {
-		return err
+		return []byte{}, []byte{}, err
 	}
 
 	out, err := io.ReadAll(s)
 	if err != nil {
-		return err
+		return []byte{}, []byte{}, err
 	}
 	var resp p2p.QueryResponse
 	if err := p2p.DeserializeQueryResponse(&resp, out); err != nil {
-		return err
+		return []byte{}, []byte{}, err
 	}
 
 	key, err := p2p.GetPeerKey(nodeAddr)
 	if err != nil {
-		return err
+		return []byte{}, []byte{}, err
 	}
 	valid, err := key.Verify([]byte(resp.MsgHash), []byte(resp.Sig))
 	if !valid || err != nil {
 		// the signature is invalid so don't even bother checking the message content
 		reputation.StrongPenalize(nodeAddr)
-		return nil
+		return p2p.SerializeQueryRequest(req), p2p.SerializeQueryResponse(resp), nil
 	}
 
 	if resp.MsgHash == p2p.HashMessage(refMsg) {
@@ -282,16 +282,16 @@ func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) error {
 		forwardTarget := filter(conn.Participants(), p2p.GetFullAddr(), nodeAddr)[0]
 		if err := forwardQueryResponse(refMsg, resp, nodeAddr, forwardTarget); err != nil {
 			log.Log().Errorf("Failed to forward data message %s:%d query response to %s", req.ConnID, req.SeqNo, forwardTarget)
-			return err
+			return []byte{}, []byte{}, err
 		}
-		return nil
+		return p2p.SerializeQueryRequest(req), p2p.SerializeQueryResponse(resp), nil
 	}
 
 	if p2p.GetFullAddr() == conn.Witness || nodeAddr == conn.Witness {
 		// witnesses can always apply a strong penalty because they directly communicated with both ends
 		// sender and receiver both communicated directly with the witness so they can also strongly penalize witness
 		reputation.StrongPenalize(nodeAddr)
-		return nil
+		return p2p.SerializeQueryRequest(req), p2p.SerializeQueryResponse(resp), nil
 	}
 
 	// otherwise this node and the queryied node did not direcctly communicate so need to weakly penalize both
@@ -300,7 +300,7 @@ func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) error {
 		reputation.WeakPenalize(n)
 	}
 
-	return nil
+	return p2p.SerializeQueryRequest(req), p2p.SerializeQueryResponse(resp), nil
 }
 
 func filter(vals []string, exclusions ...string) []string {

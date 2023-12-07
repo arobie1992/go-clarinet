@@ -57,7 +57,7 @@ type QueryResponse struct {
 	Sig     string
 }
 
-func serializeQueryResponse(resp QueryResponse) []byte {
+func SerializeQueryResponse(resp QueryResponse) []byte {
 	encHash := base64.RawStdEncoding.EncodeToString([]byte(resp.MsgHash))
 	encSig := base64.RawStdEncoding.EncodeToString([]byte(resp.Sig))
 	return []byte(fmt.Sprintf("%s.%s;", encHash, encSig))
@@ -122,7 +122,7 @@ func queryHandler(s network.Stream) {
 	sig, _ := cryptography.Sign(msgHash)
 
 	rep := QueryResponse{MsgHash: msgHash, Sig: sig}
-	s.Write(serializeQueryResponse(rep))
+	s.Write(SerializeQueryResponse(rep))
 	s.Close()
 }
 
