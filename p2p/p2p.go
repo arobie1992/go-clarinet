@@ -439,7 +439,7 @@ func closeStreamHandler(s network.Stream) {
 	conn.Status = ConnectionStatusClosed
 	tx = repository.GetDB().Save(&conn)
 	if tx.Error != nil {
-		resp := CloseResponse{CloseResponseStatusFailure, err.Error()}
+		resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
 		s.Write([]byte(SerializeCloseResponse(resp)))
 		s.Close()
 		return
