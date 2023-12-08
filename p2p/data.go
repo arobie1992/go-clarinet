@@ -150,7 +150,7 @@ func dataStreamHandler(s network.Stream) {
 
 	conn := Connection{ID: d.ConnID}
 	if tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
-		log.Log().Errorf("Failed to find connection %s: %s", d.ConnID, err.Error())
+		log.Log().Errorf("Failed to find connection %s: %s", d.ConnID, tx.Error.Error())
 		s.Reset()
 		return
 	}
