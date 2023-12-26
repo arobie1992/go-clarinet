@@ -19,11 +19,14 @@ import (
 
 func RequestConnection(targetNode string) (uuid.UUID, error) {
 	// create the logical connection
+	log.Log().Info("Making outgoing connection to node %s", targetNode)
 	conn, err := p2p.CreateOutgoingConnection(targetNode)
 	if err != nil {
 		return uuid.UUID{}, err
 	}
+	log.Log().Infof("Created outgoing connecction %s", conn.ID)
 
+	log.Log().Infof("Sending connect request for connection %s", conn.ID)
 	if err := sendConnectRequest(conn); err != nil {
 		conn.Status = p2p.ConnectionStatusClosed
 		repository.GetDB().Save(conn)
@@ -41,6 +44,7 @@ func RequestConnection(targetNode string) (uuid.UUID, error) {
 		return uuid.UUID{}, tx.Error
 	}
 
+	log.Log().Infof("Attempting to find witness for connection %s", conn.ID)
 	witness, err := requestWitness(conn)
 	if err != nil {
 		conn.Status = p2p.ConnectionStatusClosed
@@ -50,6 +54,8 @@ func RequestConnection(targetNode string) (uuid.UUID, error) {
 		}
 		return uuid.UUID{}, err
 	}
+
+	log.Log().Infof("Successfully found witness for connection %s: %s", conn.ID, witness)
 	conn.Witness = witness
 	conn.Status = p2p.ConnectionStatusOpen
 	if tx := repository.GetDB().Save(conn); tx.Error != nil {
@@ -57,6 +63,7 @@ func RequestConnection(targetNode string) (uuid.UUID, error) {
 		return uuid.UUID{}, tx.Error
 	}
 
+	log.Log().Info("Notify receiver %s of witness %s for connection %s", targetNode, witness, conn.ID)
 	if err := notifyReceiverOfWitness(conn); err != nil {
 		conn.Status = p2p.ConnectionStatusClosed
 		repository.GetDB().Save(conn)
@@ -102,6 +109,7 @@ func sendConnectRequest(conn *p2p.Connection) error {
 }
 
 func requestWitness(conn *p2p.Connection) (string, error) {
+	log.Log().Infof("Finding wintess candidates for connection %s", conn.ID)
 	candidates, err := getWitnessCandidates(conn)
 	if err != nil {
 		return "", err
@@ -170,6 +178,7 @@ func getWitnessCandidates(conn *p2p.Connection) ([]peer.ID, error) {
 		}
 	}
 	// shuffle the candidates
+	log.Log().Infof("Shuffling witness candidates for connection %s", conn.ID)
 	for i := range candidates {
 		j := rand.Intn(i + 1)
 		candidates[i], candidates[j] = candidates[j], candidates[i]
