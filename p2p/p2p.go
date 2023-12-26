@@ -430,7 +430,7 @@ func closeStreamHandler(s network.Stream) {
 	conn := Connection{ID: req.ConnID}
 	tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn)
 	if tx.Error != nil {
-		resp := CloseResponse{CloseResponseStatusFailure, err.Error()}
+		resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
 		s.Write([]byte(SerializeCloseResponse(resp)))
 		s.Close()
 		return
