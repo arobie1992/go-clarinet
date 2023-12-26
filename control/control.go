@@ -411,7 +411,7 @@ func CloseConnection(connID uuid.UUID) *CloseError {
 				sendErr = err
 			case 1:
 				witErr = err
-			case 3:
+			case 2:
 				recErr = err
 			default:
 				log.Log().Fatalf("Connection %s has too many participants.", conn.ID)
