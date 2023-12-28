@@ -19,7 +19,7 @@ import (
 
 func SendData(connID uuid.UUID, data []byte) error {
 	conn := Connection{ID: connID}
-	if tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
+	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
 		return tx.Error
 	}
 	if conn.Status != ConnectionStatusOpen {
@@ -149,7 +149,7 @@ func dataStreamHandler(s network.Stream) {
 	}
 
 	conn := Connection{ID: d.ConnID}
-	if tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
+	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
 		log.Log().Errorf("Failed to find connection %s: %s", d.ConnID, tx.Error.Error())
 		s.Reset()
 		return
