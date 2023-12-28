@@ -23,6 +23,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/multiformats/go-multiaddr"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -89,7 +90,7 @@ func InitLibp2pNode(config *config.Config) error {
 			if err != nil {
 				retErr = err
 				return
-			}	
+			}
 			cryptography.InitPrivKeyFromNode(node, getHostAddress(node))
 		}
 
@@ -427,32 +428,35 @@ func closeStreamHandler(s network.Stream) {
 		return
 	}
 
-	conn := Connection{ID: req.ConnID}
-	tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn)
-	if tx.Error != nil {
-		resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
-		s.Write([]byte(SerializeCloseResponse(resp)))
-		s.Close()
-		return
-	}
+	repository.GetDB().Transaction(func(db *gorm.DB) error {
+		conn := Connection{ID: req.ConnID}
+		tx := db.Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn)
+		if tx.Error != nil {
+			resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
+			s.Write([]byte(SerializeCloseResponse(resp)))
+			s.Close()
+			return tx.Error
+		}
 
-	conn.Status = ConnectionStatusClosed
-	tx = repository.GetDB().Save(&conn)
-	if tx.Error != nil {
-		resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
-		s.Write([]byte(SerializeCloseResponse(resp)))
-		s.Close()
-		return
-	}
+		conn.Status = ConnectionStatusClosed
+		tx = repository.GetDB().Save(&conn)
+		if tx.Error != nil {
+			resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
+			s.Write([]byte(SerializeCloseResponse(resp)))
+			s.Close()
+			return tx.Error
+		}
 
-	resp := CloseResponse{CloseResponseStatusSuccess, ""}
-	_, err = s.Write([]byte(SerializeCloseResponse(resp)))
-	if err != nil {
-		log.Log().Errorf("Failed to write response: %s", err.Error())
-		s.Reset()
-	} else {
+		resp := CloseResponse{CloseResponseStatusSuccess, ""}
+		_, err = s.Write([]byte(SerializeCloseResponse(resp)))
+		if err != nil {
+			log.Log().Errorf("Failed to write response: %s", err.Error())
+			s.Reset()
+			return err
+		}
 		s.Close()
-	}
+		return nil
+	})
 }
 
 func AddPeer(peerAddress string) (*peer.AddrInfo, error) {

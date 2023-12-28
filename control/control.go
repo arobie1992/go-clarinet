@@ -14,6 +14,7 @@ import (
 	"github.com/arobie1992/go-clarinet/reputation"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -391,49 +392,60 @@ func (ce *CloseError) Error() string {
 }
 
 func CloseConnection(connID uuid.UUID) *CloseError {
-	conn := p2p.Connection{ID: connID}
-	if tx := repository.GetDB().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
-		return &CloseError{
-			Err: errors.New(fmt.Sprintf("Failed to find connection: %s", tx.Error)),
-		}
-	}
-	defer repository.GetDB().Save(&conn)
-
-	if conn.Status == p2p.ConnectionStatusClosed {
-		// already closed so just honor the previous close
-		return nil
-	}
-
-	var sendErr error = nil
-	var witErr error = nil
-	var recErr error = nil
-
-	conn.Status = p2p.ConnectionStatusClosed
-	for i, p := range conn.Participants() {
-		if p == p2p.GetFullAddr() || p == "" {
-			// skip self
-			continue
-		}
-		if err := sendCloseRequest(&conn, p); err != nil {
-			switch i {
-			case 0:
-				sendErr = err
-			case 1:
-				witErr = err
-			case 2:
-				recErr = err
-			default:
-				log.Log().Fatalf("Connection %s has too many participants.", conn.ID)
+	err := repository.GetDB().Transaction(func(db *gorm.DB) error {
+		conn := p2p.Connection{ID: connID}
+		if tx := db.Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
+			return &CloseError{
+				Err: errors.New(fmt.Sprintf("Failed to find connection: %s", tx.Error)),
 			}
 		}
-	}
+		defer repository.GetDB().Save(&conn)
 
-	if sendErr != nil || witErr != nil || recErr != nil {
-		return &CloseError{
-			SenderError:   sendErr,
-			WitnessError:  witErr,
-			ReceiverError: recErr,
+		if conn.Status == p2p.ConnectionStatusClosed {
+			// already closed so just honor the previous close
+			return nil
 		}
+
+		var sendErr error = nil
+		var witErr error = nil
+		var recErr error = nil
+
+		conn.Status = p2p.ConnectionStatusClosed
+		for i, p := range conn.Participants() {
+			if p == p2p.GetFullAddr() || p == "" {
+				// skip self
+				continue
+			}
+			if err := sendCloseRequest(&conn, p); err != nil {
+				switch i {
+				case 0:
+					sendErr = err
+				case 1:
+					witErr = err
+				case 2:
+					recErr = err
+				default:
+					log.Log().Fatalf("Connection %s has too many participants.", conn.ID)
+				}
+			}
+		}
+
+		if sendErr != nil || witErr != nil || recErr != nil {
+			return &CloseError{
+				SenderError:   sendErr,
+				WitnessError:  witErr,
+				ReceiverError: recErr,
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		return nil
 	}
-	return nil
+	var closeErr *CloseError
+	if errors.As(err, &closeErr) {
+		return closeErr
+	}
+	closeErr.Err = err
+	return closeErr
 }
