@@ -14,7 +14,6 @@ import (
 	"github.com/arobie1992/go-clarinet/reputation"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/network"
-	"gorm.io/gorm/clause"
 )
 
 func SendData(connID uuid.UUID, data []byte) error {
