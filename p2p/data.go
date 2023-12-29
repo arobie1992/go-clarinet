@@ -21,34 +21,41 @@ func SendData(connID uuid.UUID, data []byte) error {
 	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
 		return tx.Error
 	}
+	log.Log().Infof("Found connection %v", conn)
 	if conn.Status != ConnectionStatusOpen {
 		return errors.New(fmt.Sprintf("Connection %s is not open.", connID))
 	}
 	// only save the conn if it's open
 	defer repository.GetDB().Save(&conn)
+	log.Log().Infof("Connecction %s is open so sending data", conn.ID)
 
 	seqNo := conn.NextSeqNo
 	conn.NextSeqNo += 1
 
 	d := DataMessage{connID, seqNo, string(data), "", ""}
+	log.Log().Infof("Signing data message")
 	sig, err := cryptography.Sign(fmt.Sprintf("%s.%d.%s", d.ConnID, d.SeqNo, d.Data))
 	if err != nil {
 		return err
 	}
 	d.SendSig = sig
 
+	log.Log().Info("Saving data message %s:%d to database", connID, seqNo)
 	repository.GetDB().Create(&d)
 
+	log.Log().Infof("Opening stream to %s for conn %s to send message %d", conn.Witness, conn.ID, d.SeqNo)
 	s, err := OpenStream(conn.Witness, dataProtocolID)
 	if err != nil {
 		return err
 	}
+	log.Log().Infof("Successfully opened stream to %s for conn %s to send message %d", conn.Witness, conn.ID, d.SeqNo)
 
 	_, err = s.Write(serializeDataMessage(d))
 	if err != nil {
 		s.Reset()
 		return errors.New("Failed to send data: " + err.Error())
 	}
+	log.Log().Infof("Sent message without error")
 	s.Close()
 	return nil
 }
