@@ -139,6 +139,9 @@ func deserializeDataMessage(d *DataMessage, msg string) error {
 }
 
 func dataStreamHandler(s network.Stream) {
+	sender := getSender(s)
+	log.Log().Infof("Received data stream from %s", sender)
+
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -146,6 +149,7 @@ func dataStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Received raw data message %s from %s", str, sender)
 
 	d := DataMessage{}
 	if err := deserializeDataMessage(&d, str); err != nil {
@@ -153,6 +157,7 @@ func dataStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Successfully deserialized data message from %s into %v", sender, d)
 
 	conn := Connection{ID: d.ConnID}
 	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
@@ -160,7 +165,7 @@ func dataStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
-	defer repository.GetDB().Save(&conn)
+	log.Log().Infof("Succesffully found connection %v", conn)
 
 	if conn.Status != ConnectionStatusOpen {
 		log.Log().Errorf("Received data on unopen connection %s", conn.ID)
@@ -168,12 +173,17 @@ func dataStreamHandler(s network.Stream) {
 		return
 	}
 	defer repository.GetDB().Create(&d)
+	log.Log().Infof("Connection %s is open, so accept data", conn.ID)
 
 	if conn.Receiver == GetFullAddr() {
+		log.Log().Infof("Message %s:%d is addressed to me", d.ConnID, d.SeqNo)
 		receiverReview(conn, d)
+		log.Log().Infof("Finished reviewing message %s:%d is addressed to me", d.ConnID, d.SeqNo)
 		s.Close()
+		log.Log().Infof("Closing data connection from %s", sender)
 		return
 	} else if conn.Witness == GetFullAddr() {
+		log.Log().Info("I am witnessing so sign and forward message %s:%d", d.ConnID, d.SeqNo)
 		witSig, err := cryptography.Sign(fmt.Sprintf("%s.%d.%s.%s", d.ConnID, d.SeqNo, d.Data, d.SendSig))
 		if err != nil {
 			log.Log().Errorf("Failed to sign data message %s:%d as witness: %s", d.ConnID, d.SeqNo, err.Error())
@@ -181,15 +191,19 @@ func dataStreamHandler(s network.Stream) {
 			return
 		}
 		d.WitSig = witSig
+		log.Log().Info("Successfully signed message %s:%d as witness", d.ConnID, d.SeqNo)
 
 		witnessReview(conn, d)
+		log.Log().Infof("Finished reviewing message %s:%d is addressed to me", d.ConnID, d.SeqNo)
 
+		log.Log().Infof("Opening stream to forward message %s:%d to receiver %s", d.ConnID, d.SeqNo, conn.Receiver)
 		fs, err := OpenStream(conn.Receiver, dataProtocolID)
 		if err != nil {
 			log.Log().Errorf("Failed to open stream to receiver: %s", err.Error())
 			s.Reset()
 			return
 		}
+		log.Log().Infof("Successfully opened stream to forward message %s:%d to receiver %s", d.ConnID, d.SeqNo, conn.Receiver)
 
 		_, err = fs.Write(serializeDataMessage(d))
 		if err != nil {
@@ -199,6 +213,7 @@ func dataStreamHandler(s network.Stream) {
 		} else {
 			s.Close()
 			fs.Close()
+			log.Log().Infof("Closed data streams from %s and to %s", sender, conn.Receiver)
 		}
 	} else {
 		log.Log().Warnf("Received DataMessage %d for connection %s on which host is neither witness or receiver.", d.SeqNo, conn.ID)

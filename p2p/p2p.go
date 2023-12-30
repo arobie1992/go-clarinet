@@ -118,7 +118,14 @@ func getHostAddress(ha host.Host) string {
 	return addr.Encapsulate(hostAddr).String()
 }
 
+func getSender(s network.Stream) string {
+	return s.Conn().RemoteMultiaddr().String() + "/p2p/" + s.Conn().RemotePeer().String()
+}
+
 func connectStreamHandler(s network.Stream) {
+	sender := getSender(s)
+	log.Log().Infof("Received connect stream from %s", sender)
+
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -126,6 +133,7 @@ func connectStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Received raw msg %s from %s", str, sender)
 
 	var req ConnectRequest
 	if err := DeserializeConnectRequest(&req, str); err != nil {
@@ -134,24 +142,34 @@ func connectStreamHandler(s network.Stream) {
 		s.Close()
 		return
 	}
+	log.Log().Infof("Deserialized connect request from %s to %v", sender, req)
 
-	sender := s.Conn().RemoteMultiaddr().String() + "/p2p/" + s.Conn().RemotePeer().String()
 	conn := CreateIncomingConnection(req.ConnID, sender)
+	log.Log().Infof("Created incoming connection %v", conn)
 	tx := repository.GetDB().Save(&conn)
 	if tx.Error != nil {
+		log.Log().Infof("Failed to save conn %v", conn)
 		resp := ConnectResponse{ConnectResponseStatusRejected, ConnectResponseRejectReasonHasErrors, tx.Error.Error()}
-		s.Write([]byte(SerializeConnectResponse(resp)))
+		log.Log().Infof("Writing error response %v", resp)
+		if _, err := s.Write([]byte(SerializeConnectResponse(resp))); err != nil {
+			log.Log().Errorf("Error writing response: %s", err)
+		}
+		log.Log().Info("Wrote response without error")
 		s.Close()
+		log.Log().Infof("Closed stream from %s", sender)
 		return
 	}
+	log.Log().Infof("Saved conn %v", conn)
 
 	resp := ConnectResponse{ConnectResponseStatusAccepted, ConnectResponseRejectReasonNone, ""}
+	log.Log().Infof("Sending resp %v", resp)
 	_, err = s.Write([]byte(SerializeConnectResponse(resp)))
 	if err != nil {
 		log.Log().Errorf("Error writing response: %s", err)
 		s.Reset()
 	} else {
 		s.Close()
+		log.Log().Info("Closed connect request stream from %s", sender)
 	}
 }
 
@@ -412,6 +430,9 @@ func DeserializeCloseResponse(resp *CloseResponse, msg string) error {
 }
 
 func closeStreamHandler(s network.Stream) {
+	sender := getSender(s)
+	log.Log().Infof("Received close stream from %s", sender)
+
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -419,31 +440,50 @@ func closeStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Read raw message %s from %s", str, sender)
 
 	var req CloseRequest
 	if err := DeserializeCloseRequest(&req, str); err != nil {
+		log.Log().Errorf("Failed to deserialize close request %s from %s", str, sender)
 		resp := CloseResponse{CloseResponseStatusFailure, err.Error()}
-		s.Write([]byte(SerializeCloseResponse(resp)))
+		if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
+			log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
+		}
+		log.Log().Infof("Sent close response %v to %s without error", resp, sender)
 		s.Close()
+		log.Log().Infof("Closed close stream from %s", sender)
 		return
 	}
+	log.Log().Infof("Deserialized close request from %s into %v", sender, req)
 
 	repository.GetDB().Transaction(func(db *gorm.DB) error {
 		conn := Connection{ID: req.ConnID}
 		tx := db.Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn)
 		if tx.Error != nil {
+			log.Log().Errorf("Failed to retrieve connection %s from database to close it", req.ConnID)
 			resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
 			s.Write([]byte(SerializeCloseResponse(resp)))
+			if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
+				log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
+			}
+			log.Log().Infof("Sent close response %v to %s without error", resp, sender)	
 			s.Close()
+			log.Log().Infof("Closed close stream from %s", sender)
 			return tx.Error
 		}
 
 		conn.Status = ConnectionStatusClosed
 		tx = repository.GetDB().Save(&conn)
 		if tx.Error != nil {
+			log.Log().Errorf("Failed to save connection %s to database to close it", req.ConnID)
 			resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
 			s.Write([]byte(SerializeCloseResponse(resp)))
+			if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
+				log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
+			}
+			log.Log().Infof("Sent close response %v to %s without error", resp, sender)	
 			s.Close()
+			log.Log().Infof("Closed close stream from %s", sender)
 			return tx.Error
 		}
 
@@ -455,6 +495,7 @@ func closeStreamHandler(s network.Stream) {
 			return err
 		}
 		s.Close()
+		log.Log().Infof("Closed close stream from %s", sender)
 		return nil
 	})
 }
