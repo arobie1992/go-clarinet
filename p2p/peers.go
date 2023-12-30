@@ -84,6 +84,8 @@ func DeserializeRequestPeersResponse(resp *RequestPeersResponse, msg []byte) err
 
 func requestPeersStreamHandler(s network.Stream) {
 	requestorAddr := s.Conn().RemoteMultiaddr().String() + "/p2p/" + s.Conn().RemotePeer().String()
+	log.Log().Infof("Received request peers stream from %s", requestorAddr)
+
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -91,6 +93,7 @@ func requestPeersStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Read raw peer request %s from %s", str, requestorAddr)
 
 	req := RequestPeersRequest{}
 	if err := deserializeRequestPeersRequest(&req, str); err != nil {
@@ -98,6 +101,7 @@ func requestPeersStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Deserialized request peers request from %s into %v", requestorAddr, req)
 
 	peers := GetLibp2pNode().Peerstore().Peers()
 	peerAddrs := []string{}
@@ -118,6 +122,10 @@ func requestPeersStreamHandler(s network.Stream) {
 	}
 
 	resp := RequestPeersResponse{PeerAddrs: peerAddrs}
-	s.Write(serializeRequestPeersResponse(resp))
+	if _, err := s.Write(serializeRequestPeersResponse(resp)); err != nil {
+		log.Log().Errorf("Failed to write peer request response %v to %s: %s", resp, requestorAddr, err)
+	}
+	log.Log().Errorf("Write peer request response %v to %s without error", resp, requestorAddr, err)
 	s.Close()
+	log.Log().Infof("Closed peer request stream from %s", requestorAddr)
 }

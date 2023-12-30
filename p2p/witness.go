@@ -141,6 +141,9 @@ func DeserializeWitnessResponse(resp *WitnessResponse, msg []byte) error {
 }
 
 func witnessStreamHandler(s network.Stream) {
+	sender := getSender(s)
+	log.Log().Infof("Received witness stream from %s", sender)
+
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -148,23 +151,37 @@ func witnessStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Read raw witness request %s from %s", str, sender)
 
 	var req WitnessRequest
 	if err := DeserializeWitnessRequest(&req, str); err != nil {
+		log.Log().Errorf("Failed to deserialize witness request %s from %s", str, sender)
 		resp := WitnessResponse{ConnectResponseStatusRejected, WitnessResponseRejectReasonHasErrors, err.Error()}
-		s.Write(SerializeWitnessResponse(resp))
+		if _, err := s.Write(SerializeWitnessResponse(resp)); err != nil {
+			log.Log().Errorf("Failed to write witness response %v to %s", resp, sender)
+		}
+		log.Log().Infof("Wrote witness response %v to %s without error", resp, sender)
 		s.Close()
+		log.Log().Infof("Closed witness stream from %s", sender)
 		return
 	}
+	log.Log().Infof("Successfully deserialized witness request from %s into %v", sender, req)
 
 	conn := CreateWitnessingConnection(req.ConnID, req.Sender, req.Receiver)
+	log.Log().Infof("Created witnessing connection %v", conn)
 	tx := repository.GetDB().Save(&conn)
 	if tx.Error != nil {
+		log.Log().Errorf("Failed to save witnessing connection %v to database", conn)
 		resp := WitnessResponse{WitnessResponseStatusRejected, WitnessResponseRejectReasonHasErrors, tx.Error.Error()}
-		s.Write(SerializeWitnessResponse(resp))
+		if _, err := s.Write(SerializeWitnessResponse(resp)); err != nil {
+			log.Log().Errorf("Failed to write witness response %v to %s", resp, sender)
+		}
+		log.Log().Infof("Wrote witness response %v to %s without error", resp, sender)
 		s.Close()
+		log.Log().Infof("Closed witness stream from %s", sender)
 		return
 	}
+	log.Log().Infof("Saved witnessing connecction %v to database", conn)
 
 	resp := WitnessResponse{WitnessResponseStatusAccepted, WitnessResponseRejectReasonNone, ""}
 	_, err = s.Write(SerializeWitnessResponse(resp))
@@ -173,6 +190,7 @@ func witnessStreamHandler(s network.Stream) {
 		s.Reset()
 	} else {
 		s.Close()
+		log.Log().Infof("Closed witness stream from %s", sender)
 	}
 }
 
@@ -268,6 +286,9 @@ func DeserializeWitnessNotificationResponse(resp *WitnessNotificationResponse, m
 }
 
 func witnessNotificationStreamHandler(s network.Stream) {
+	sender := getSender(s)
+	log.Log().Infof("Received witness notification stream from %s", sender)
+
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -275,31 +296,51 @@ func witnessNotificationStreamHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Received raw witness notification %s from %s", str, sender)
 
 	var req WitnessNotification
 	if err := DeserializeWitnessNotification(&req, str); err != nil {
+		log.Log().Errorf("Failed to deserialize witness notification %s from %s", str, sender)
 		resp := WitnessNotificationResponse{WitnessNotificationStatusFailure, err.Error()}
-		s.Write(SerializeWitnessNotificationResponse(resp))
+		if _, err := s.Write(SerializeWitnessNotificationResponse(resp)); err != nil {
+			log.Log().Errorf("Failed to send witness notification response %v to %s: %s", resp, sender, err)
+		}
+		log.Log().Infof("Sent witness notification response %v to %s without error", resp, sender)
 		s.Close()
+		log.Log().Infof("Closed witness notification stream from %s", sender)
 		return
 	}
+	log.Log().Infof("Successfully deserialized witness notification from %s to %v", sender, req)
 
 	conn := Connection{ID: req.ConnID}
 	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
+		log.Log().Errorf("Failed to retreive connection %s from database", req.ConnID)
 		resp := WitnessNotificationResponse{WitnessNotificationStatusFailure, tx.Error.Error()}
-		s.Write(SerializeWitnessNotificationResponse(resp))
+		if _, err := s.Write(SerializeWitnessNotificationResponse(resp)); err != nil {
+			log.Log().Errorf("Failed to send witness notification response %v to %s: %s", resp, sender, err)
+		}
+		log.Log().Infof("Sent witness notification response %v to %s without error", resp, sender)
 		s.Close()
+		log.Log().Infof("Closed witness notification stream from %s", sender)
 		return
 	}
+	log.Log().Infof("Successfully retrieved connection %s from database", conn.ID)
 
 	conn.Witness = req.Witness
+	log.Log().Infof("Set witness on connecction %s to %s", conn.ID, req.Witness)
 	conn.Status = ConnectionStatusOpen
 	if tx := repository.GetDB().Save(&conn); tx.Error != nil {
+		log.Log().Errorf("Failed to save connection %s to database", req.ConnID)
 		resp := WitnessNotificationResponse{WitnessNotificationStatusFailure, tx.Error.Error()}
-		s.Write(SerializeWitnessNotificationResponse(resp))
+		if _, err := s.Write(SerializeWitnessNotificationResponse(resp)); err != nil {
+			log.Log().Errorf("Failed to send witness notification response %v to %s: %s", resp, sender, err)
+		}
+		log.Log().Infof("Sent witness notification response %v to %s without error", resp, sender)
 		s.Close()
+		log.Log().Infof("Closed witness notification stream from %s", sender)
 		return
 	}
+	log.Log().Infof("Successfully saved connection %s to database", conn.ID)
 
 	resp := WitnessNotificationResponse{WitnessNotificationStatusSuccess, ""}
 	_, err = s.Write(SerializeWitnessNotificationResponse(resp))
@@ -308,5 +349,6 @@ func witnessNotificationStreamHandler(s network.Stream) {
 		s.Reset()
 	} else {
 		s.Close()
+		log.Log().Infof("Closed witness notification stream from node %s", sender)
 	}
 }

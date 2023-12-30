@@ -94,6 +94,9 @@ func DeserializeQueryResponse(resp *QueryResponse, msg []byte) error {
 }
 
 func queryHandler(s network.Stream) {
+	sender := getSender(s)
+	log.Log().Infof("Received query stream from %s", sender)
+
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -101,6 +104,7 @@ func queryHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Received raw query request %s from %s", str, sender)
 
 	req := QueryRequest{}
 	if err := deserializeQueryRequest(&req, str); err != nil {
@@ -108,22 +112,31 @@ func queryHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Successfully deserialized query request from %s into %v", sender, req)
 
 	d := DataMessage{ConnID: req.ConnID, SeqNo: req.SeqNo}
 	// if we got an error, it doesn't really matter for the moment since we'll get penalized regardless
-	// realistically would probably want better handling, like notifying the
-	repository.GetDB().Find(&d)
-
-	conn := Connection{req.ConnID, "", "", "", 0, 0}
-	// similarly here, error doesn't really help, so just reply
-	repository.GetDB().Find(&conn)
+	// realistically would probably want better handling, like notifying the sender
+	if tx := repository.GetDB().Find(&d); tx.Error != nil {
+		log.Log().Errorf("Failed to retreve data message for query request %v from database", req)
+	}
+	log.Log().Errorf("Successfully retreved data message for query request %v from database", req)
 
 	msgHash := HashMessage(d)
-	sig, _ := cryptography.Sign(msgHash)
+	sig, err := cryptography.Sign(msgHash)
+	if err != nil {
+		log.Log().Errorf("Failed to sign hash of message for query request %v: %s", req, err)
+	}
+	log.Log().Errorf("Successfully signed hash of message for query request %v: %s", req, err)
 
 	rep := QueryResponse{MsgHash: msgHash, Sig: sig}
-	s.Write(SerializeQueryResponse(rep))
+	if _, err := s.Write(SerializeQueryResponse(rep)); err != nil {
+		log.Log().Errorf("Failed to write query response %v to %s", rep, sender)
+	}
+	log.Log().Errorf("Wrote query response %v to %s without error", rep, sender)
+
 	s.Close()
+	log.Log().Infof("Closed query stream from %s", sender)
 }
 
 func HashMessage(d DataMessage) string {
@@ -212,6 +225,7 @@ func deserializeQueryForward(f *QueryForward, msg string) error {
 
 func forwardHandler(s network.Stream) {
 	forwarderAddr := s.Conn().RemoteMultiaddr().String() + "/p2p/" + s.Conn().RemotePeer().String()
+	log.Log().Infof("Received forwarded query stream from %s")
 
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
@@ -220,6 +234,7 @@ func forwardHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Received raw query forward %s from %s", str, forwarderAddr)
 
 	f := QueryForward{}
 	if err := deserializeQueryForward(&f, str); err != nil {
@@ -227,6 +242,7 @@ func forwardHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Successfully deserialized query forward from %s into %v", forwarderAddr, f)
 
 	key, err := GetPeerKey(forwarderAddr)
 	if err != nil {
@@ -234,6 +250,7 @@ func forwardHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Successfully got key for forwarder %s", forwarderAddr)
 
 	valid, err := key.Verify([]byte(fmt.Sprintf("%s.%d.%s.%s.%s", f.ConnID, f.SeqNo, f.MsgHash, f.Sig, f.Queried)), []byte(f.FwdSig))
 	if !valid || err != nil {
@@ -242,6 +259,7 @@ func forwardHandler(s network.Stream) {
 		s.Close()
 		return
 	}
+	log.Log().Infof("Forwarder %s signature for %v is valid", forwarderAddr, f)
 
 	key, err = GetPeerKey(f.Queried)
 	if err != nil {
@@ -249,6 +267,7 @@ func forwardHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Successfully got key for queried node %s", f.Queried)
 
 	valid, err = key.Verify([]byte(f.MsgHash), []byte(f.Sig))
 	if !valid || err != nil {
@@ -258,6 +277,7 @@ func forwardHandler(s network.Stream) {
 		s.Close()
 		return
 	}
+	log.Log().Warnf("Node %s forwarded query response has valid signature", forwarderAddr)
 
 	refMsg := DataMessage{ConnID: f.ConnID, SeqNo: f.SeqNo}
 	if tx := repository.GetDB().Find(&refMsg); tx.Error != nil {
@@ -270,6 +290,7 @@ func forwardHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Found ref message %v", refMsg)
 
 	conn := Connection{ID: f.ConnID, Sender: "", Witness: "", Receiver: "", Status: -1, NextSeqNo: -1}
 	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
@@ -282,27 +303,34 @@ func forwardHandler(s network.Stream) {
 		s.Reset()
 		return
 	}
+	log.Log().Infof("Found connection %v", conn)
 
 	if f.MsgHash == HashMessage(refMsg) {
+		log.Log().Infof("Forwarded message %v matched ref message hash", f)
 		s.Close()
 		return
 	}
+	log.Log().Infof("Forwarded message %v did not match ref message", f)
 
 	if GetFullAddr() == conn.Witness || f.Queried == conn.Witness {
 		// witnesses can always apply a strong penalty because they directly communicated with both ends
 		// sender and receiver both communicated directly with the witness so they can also strongly penalize witness
+		log.Log().Infof("Have enough context to apply strong penalty for forwarded message %v", f)
 		reputation.StrongPenalize(f.Queried)
 		s.Close()
+		log.Log().Infof("Closing forward stream from %s", forwarderAddr)
 		return
 	}
 
 	// otherwise this node and the queryied node did not direcctly communicate so need to weakly penalize both
 	otherNodes := filter(conn.Participants(), GetFullAddr())
 	for _, n := range otherNodes {
+		log.Log().Infof("Applying weak penalty to %s for forward %v", n, f)
 		reputation.WeakPenalize(n)
 	}
 
 	s.Close()
+	log.Log().Infof("Closing forward stream from %s", forwarderAddr)
 }
 
 func filter(vals []string, exclusions ...string) []string {
