@@ -133,7 +133,7 @@ func queryHandler(s network.Stream) {
 	if _, err := s.Write(SerializeQueryResponse(rep)); err != nil {
 		log.Log().Errorf("Failed to write query response %v to %s", rep, sender)
 	}
-	log.Log().Errorf("Wrote query response %v to %s without error", rep, sender)
+	log.Log().Infof("Wrote query response %v to %s without error", rep, sender)
 
 	EnsureClose(s)
 	log.Log().Infof("Closed query stream from %s", sender)

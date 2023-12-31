@@ -125,7 +125,7 @@ func requestPeersStreamHandler(s network.Stream) {
 	if _, err := s.Write(serializeRequestPeersResponse(resp)); err != nil {
 		log.Log().Errorf("Failed to write peer request response %v to %s: %s", resp, requestorAddr, err)
 	}
-	log.Log().Errorf("Write peer request response %v to %s without error", resp, requestorAddr, err)
+	log.Log().Infof("Wrote peer request response %v to %s without error", resp, requestorAddr)
 	EnsureClose(s)
 	log.Log().Infof("Closed peer request stream from %s", requestorAddr)
 }
