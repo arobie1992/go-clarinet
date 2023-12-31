@@ -130,7 +130,7 @@ func connectStreamHandler(s network.Stream) {
 	str, err := buf.ReadString(';')
 	if err != nil {
 		log.Log().Errorf("Error reading request: %s", err)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Received raw msg %s from %s", str, sender)
@@ -139,7 +139,7 @@ func connectStreamHandler(s network.Stream) {
 	if err := DeserializeConnectRequest(&req, str); err != nil {
 		resp := ConnectResponse{ConnectResponseStatusRejected, ConnectResponseRejectReasonHasErrors, err.Error()}
 		s.Write([]byte(SerializeConnectResponse(resp)))
-		s.Close()
+		EnsureClose(s)
 		return
 	}
 	log.Log().Infof("Deserialized connect request from %s to %v", sender, req)
@@ -155,7 +155,7 @@ func connectStreamHandler(s network.Stream) {
 			log.Log().Errorf("Error writing response: %s", err)
 		}
 		log.Log().Info("Wrote response without error")
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closed stream from %s", sender)
 		return
 	}
@@ -166,9 +166,9 @@ func connectStreamHandler(s network.Stream) {
 	_, err = s.Write([]byte(SerializeConnectResponse(resp)))
 	if err != nil {
 		log.Log().Errorf("Error writing response: %s", err)
-		s.Reset()
+		EnsureReset(s)
 	} else {
-		s.Close()
+		EnsureClose(s)
 		log.Log().Info("Closed connect request stream from %s", sender)
 	}
 }
@@ -437,7 +437,7 @@ func closeStreamHandler(s network.Stream) {
 	str, err := buf.ReadString(';')
 	if err != nil {
 		log.Log().Errorf("Failed to read request: %s", err)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Read raw message %s from %s", str, sender)
@@ -450,7 +450,7 @@ func closeStreamHandler(s network.Stream) {
 			log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
 		}
 		log.Log().Infof("Sent close response %v to %s without error", resp, sender)
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closed close stream from %s", sender)
 		return
 	}
@@ -466,8 +466,8 @@ func closeStreamHandler(s network.Stream) {
 			if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
 				log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
 			}
-			log.Log().Infof("Sent close response %v to %s without error", resp, sender)	
-			s.Close()
+			log.Log().Infof("Sent close response %v to %s without error", resp, sender)
+			EnsureClose(s)
 			log.Log().Infof("Closed close stream from %s", sender)
 			return tx.Error
 		}
@@ -481,8 +481,8 @@ func closeStreamHandler(s network.Stream) {
 			if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
 				log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
 			}
-			log.Log().Infof("Sent close response %v to %s without error", resp, sender)	
-			s.Close()
+			log.Log().Infof("Sent close response %v to %s without error", resp, sender)
+			EnsureClose(s)
 			log.Log().Infof("Closed close stream from %s", sender)
 			return tx.Error
 		}
@@ -491,10 +491,10 @@ func closeStreamHandler(s network.Stream) {
 		_, err = s.Write([]byte(SerializeCloseResponse(resp)))
 		if err != nil {
 			log.Log().Errorf("Failed to write response: %s", err.Error())
-			s.Reset()
+			EnsureReset(s)
 			return err
 		}
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closed close stream from %s", sender)
 		return nil
 	})

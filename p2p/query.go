@@ -101,7 +101,7 @@ func queryHandler(s network.Stream) {
 	str, err := buf.ReadString(';')
 	if err != nil {
 		log.Log().Errorf("Error reading request: %s", err)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Received raw query request %s from %s", str, sender)
@@ -109,7 +109,7 @@ func queryHandler(s network.Stream) {
 	req := QueryRequest{}
 	if err := deserializeQueryRequest(&req, str); err != nil {
 		log.Log().Errorf("Failed to deserialize QueryRequest %s: %s", str, err.Error())
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Successfully deserialized query request from %s into %v", sender, req)
@@ -120,14 +120,14 @@ func queryHandler(s network.Stream) {
 	if tx := repository.GetDB().Find(&d); tx.Error != nil {
 		log.Log().Errorf("Failed to retreve data message for query request %v from database", req)
 	}
-	log.Log().Errorf("Successfully retreved data message for query request %v from database", req)
+	log.Log().Infof("Successfully retreved data message for query request %v from database", req)
 
 	msgHash := HashMessage(d)
 	sig, err := cryptography.Sign(msgHash)
 	if err != nil {
 		log.Log().Errorf("Failed to sign hash of message for query request %v: %s", req, err)
 	}
-	log.Log().Errorf("Successfully signed hash of message for query request %v: %s", req, err)
+	log.Log().Infof("Successfully signed hash of message for query request %v: %s", req, err)
 
 	rep := QueryResponse{MsgHash: msgHash, Sig: sig}
 	if _, err := s.Write(SerializeQueryResponse(rep)); err != nil {
@@ -135,14 +135,14 @@ func queryHandler(s network.Stream) {
 	}
 	log.Log().Errorf("Wrote query response %v to %s without error", rep, sender)
 
-	s.Close()
+	EnsureClose(s)
 	log.Log().Infof("Closed query stream from %s", sender)
 }
 
 func HashMessage(d DataMessage) string {
-	/* Need to include sender signature to ensure that a malicious witness can't alter the sender 
+	/* Need to include sender signature to ensure that a malicious witness can't alter the sender
 	signature during data transmission and then escape detection of this malicious action during
-	querying. Can't include witness signature because sender has no record of the witness's 
+	querying. Can't include witness signature because sender has no record of the witness's
 	signature so can't calculate a hash with that properly. */
 	// Are there any ways the lack of witness signature can be exploited? Doesn't seem like it, but need to review more.
 	str := fmt.Sprintf("%s.%d.%s.%s", d.ConnID, d.SeqNo, d.Data, d.SendSig)
@@ -231,7 +231,7 @@ func forwardHandler(s network.Stream) {
 	str, err := buf.ReadString(';')
 	if err != nil {
 		log.Log().Errorf("Error reading request: %s", err)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Received raw query forward %s from %s", str, forwarderAddr)
@@ -239,7 +239,7 @@ func forwardHandler(s network.Stream) {
 	f := QueryForward{}
 	if err := deserializeQueryForward(&f, str); err != nil {
 		log.Log().Errorf("Failed to deserialize QueryForward %s: %s", str, err)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Successfully deserialized query forward from %s into %v", forwarderAddr, f)
@@ -247,7 +247,7 @@ func forwardHandler(s network.Stream) {
 	key, err := GetPeerKey(forwarderAddr)
 	if err != nil {
 		log.Log().Errorf("Failed to retrieve key for forwarding peer %s: %s", forwarderAddr, err)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Successfully got key for forwarder %s", forwarderAddr)
@@ -256,7 +256,7 @@ func forwardHandler(s network.Stream) {
 	if !valid || err != nil {
 		log.Log().Warnf("Invalid %s signature on forward", forwarderAddr)
 		reputation.StrongPenalize(forwarderAddr)
-		s.Close()
+		EnsureClose(s)
 		return
 	}
 	log.Log().Infof("Forwarder %s signature for %v is valid", forwarderAddr, f)
@@ -264,7 +264,7 @@ func forwardHandler(s network.Stream) {
 	key, err = GetPeerKey(f.Queried)
 	if err != nil {
 		log.Log().Errorf("Failed to retrieve key for queried peer %s: %s", f.Queried, err)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Successfully got key for queried node %s", f.Queried)
@@ -274,7 +274,7 @@ func forwardHandler(s network.Stream) {
 		// peers must only forward a query response if the signature is valid
 		log.Log().Warnf("Node %s forwarded a query response with an invalid signature", forwarderAddr)
 		reputation.StrongPenalize(forwarderAddr)
-		s.Close()
+		EnsureClose(s)
 		return
 	}
 	log.Log().Warnf("Node %s forwarded query response has valid signature", forwarderAddr)
@@ -282,12 +282,12 @@ func forwardHandler(s network.Stream) {
 	refMsg := DataMessage{ConnID: f.ConnID, SeqNo: f.SeqNo}
 	if tx := repository.GetDB().Find(&refMsg); tx.Error != nil {
 		log.Log().Warnf("Error while querying for data message: %s", err)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	if refMsg.Data == "" {
 		log.Log().Warnf("Unable to find message: %s:%d", f.ConnID, f.SeqNo)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Found ref message %v", refMsg)
@@ -295,19 +295,19 @@ func forwardHandler(s network.Stream) {
 	conn := Connection{ID: f.ConnID, Sender: "", Witness: "", Receiver: "", Status: -1, NextSeqNo: -1}
 	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
 		log.Log().Warnf("Error while querying for connection: %s", err)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	if conn.Status == -1 {
 		log.Log().Warnf("Unable to find connection: %s", f.ConnID)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Found connection %v", conn)
 
 	if f.MsgHash == HashMessage(refMsg) {
 		log.Log().Infof("Forwarded message %v matched ref message hash", f)
-		s.Close()
+		EnsureClose(s)
 		return
 	}
 	log.Log().Infof("Forwarded message %v did not match ref message", f)
@@ -317,7 +317,7 @@ func forwardHandler(s network.Stream) {
 		// sender and receiver both communicated directly with the witness so they can also strongly penalize witness
 		log.Log().Infof("Have enough context to apply strong penalty for forwarded message %v", f)
 		reputation.StrongPenalize(f.Queried)
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closing forward stream from %s", forwarderAddr)
 		return
 	}
@@ -329,7 +329,7 @@ func forwardHandler(s network.Stream) {
 		reputation.WeakPenalize(n)
 	}
 
-	s.Close()
+	EnsureClose(s)
 	log.Log().Infof("Closing forward stream from %s", forwarderAddr)
 }
 

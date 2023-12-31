@@ -148,7 +148,7 @@ func witnessStreamHandler(s network.Stream) {
 	str, err := buf.ReadString(';')
 	if err != nil {
 		log.Log().Errorf("Failed to read request: %s", err.Error())
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Read raw witness request %s from %s", str, sender)
@@ -161,7 +161,7 @@ func witnessStreamHandler(s network.Stream) {
 			log.Log().Errorf("Failed to write witness response %v to %s", resp, sender)
 		}
 		log.Log().Infof("Wrote witness response %v to %s without error", resp, sender)
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closed witness stream from %s", sender)
 		return
 	}
@@ -177,7 +177,7 @@ func witnessStreamHandler(s network.Stream) {
 			log.Log().Errorf("Failed to write witness response %v to %s", resp, sender)
 		}
 		log.Log().Infof("Wrote witness response %v to %s without error", resp, sender)
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closed witness stream from %s", sender)
 		return
 	}
@@ -187,9 +187,9 @@ func witnessStreamHandler(s network.Stream) {
 	_, err = s.Write(SerializeWitnessResponse(resp))
 	if err != nil {
 		log.Log().Errorf("Failed to write response: %s", err)
-		s.Reset()
+		EnsureReset(s)
 	} else {
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closed witness stream from %s", sender)
 	}
 }
@@ -293,7 +293,7 @@ func witnessNotificationStreamHandler(s network.Stream) {
 	str, err := buf.ReadString(';')
 	if err != nil {
 		log.Log().Errorf("Failed to read request: %s", err.Error())
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Received raw witness notification %s from %s", str, sender)
@@ -306,7 +306,7 @@ func witnessNotificationStreamHandler(s network.Stream) {
 			log.Log().Errorf("Failed to send witness notification response %v to %s: %s", resp, sender, err)
 		}
 		log.Log().Infof("Sent witness notification response %v to %s without error", resp, sender)
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closed witness notification stream from %s", sender)
 		return
 	}
@@ -320,7 +320,7 @@ func witnessNotificationStreamHandler(s network.Stream) {
 			log.Log().Errorf("Failed to send witness notification response %v to %s: %s", resp, sender, err)
 		}
 		log.Log().Infof("Sent witness notification response %v to %s without error", resp, sender)
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closed witness notification stream from %s", sender)
 		return
 	}
@@ -336,7 +336,7 @@ func witnessNotificationStreamHandler(s network.Stream) {
 			log.Log().Errorf("Failed to send witness notification response %v to %s: %s", resp, sender, err)
 		}
 		log.Log().Infof("Sent witness notification response %v to %s without error", resp, sender)
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closed witness notification stream from %s", sender)
 		return
 	}
@@ -346,9 +346,9 @@ func witnessNotificationStreamHandler(s network.Stream) {
 	_, err = s.Write(SerializeWitnessNotificationResponse(resp))
 	if err != nil {
 		log.Log().Errorf("Failed to write response: %s", err)
-		s.Reset()
+		EnsureReset(s)
 	} else {
-		s.Close()
+		EnsureClose(s)
 		log.Log().Infof("Closed witness notification stream from node %s", sender)
 	}
 }

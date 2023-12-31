@@ -90,7 +90,7 @@ func requestPeersStreamHandler(s network.Stream) {
 	str, err := buf.ReadString(';')
 	if err != nil {
 		log.Log().Errorf("Error reading request: %s", err)
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Read raw peer request %s from %s", str, requestorAddr)
@@ -98,7 +98,7 @@ func requestPeersStreamHandler(s network.Stream) {
 	req := RequestPeersRequest{}
 	if err := deserializeRequestPeersRequest(&req, str); err != nil {
 		log.Log().Errorf("Failed to deserialize RequestPeersRequest %s: %s", str, err.Error())
-		s.Reset()
+		EnsureReset(s)
 		return
 	}
 	log.Log().Infof("Deserialized request peers request from %s into %v", requestorAddr, req)
@@ -108,11 +108,11 @@ func requestPeersStreamHandler(s network.Stream) {
 	for i, p := range peers {
 		// at the moment, all peers should only have one address, so no need to differentiate between numPeers and numAddrs
 		if i == req.NumPeers {
-			break;
+			break
 		}
 		addrs := GetLibp2pNode().Peerstore().Addrs(p)
 		for _, addr := range addrs {
-			peerAddr := addr.String()+"/p2p/"+p.String()
+			peerAddr := addr.String() + "/p2p/" + p.String()
 			if peerAddr == GetFullAddr() || peerAddr == requestorAddr {
 				// skip self & whoever's asking
 				continue
@@ -126,6 +126,6 @@ func requestPeersStreamHandler(s network.Stream) {
 		log.Log().Errorf("Failed to write peer request response %v to %s: %s", resp, requestorAddr, err)
 	}
 	log.Log().Errorf("Write peer request response %v to %s without error", resp, requestorAddr, err)
-	s.Close()
+	EnsureClose(s)
 	log.Log().Infof("Closed peer request stream from %s", requestorAddr)
 }
