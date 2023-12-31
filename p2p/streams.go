@@ -17,6 +17,7 @@ func EnsureClose(s network.Stream) {
 	for i, err := 1, s.Close(); err != nil; i, err = i+1, s.Close() {
 		// This is a terrible fix; actually figure out what this means and handle it properly
 		if strings.Contains(err.Error(), "close called for canceled stream") {
+			log.Log().Infof("Had error, but stream is supposedly canceled, so should be fine to stop retrying: %s", err)
 			break;
 		}
 		log.Log().Errorf("Failed to close stream to/from %s. Error: %s. Sleep for %d seconds and retry.", otherSide, err, i)
@@ -28,7 +29,8 @@ func EnsureReset(s network.Stream) {
 	otherSide := getSender(s)
 	for i, err := 1, s.Reset(); err != nil; i, err = i+1, s.Reset() {
 		// This is a terrible fix; actually figure out what this means and handle it properly
-		if strings.Contains(err.Error(), "close called for canceled stream") {
+		if strings.Contains(err.Error(), "called for canceled stream") {
+			log.Log().Infof("Had error, but stream is supposedly canceled, so should be fine to stop retrying: %s", err)
 			break;
 		}
 		log.Log().Errorf("Failed to reset stream to/from %s. Error: %s. Sleep for %d seconds and retry.", otherSide, err, i)

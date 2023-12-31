@@ -169,7 +169,7 @@ func connectStreamHandler(s network.Stream) {
 		EnsureReset(s)
 	} else {
 		EnsureClose(s)
-		log.Log().Info("Closed connect request stream from %s", sender)
+		log.Log().Infof("Closed connect request stream from %s", sender)
 	}
 }
 
