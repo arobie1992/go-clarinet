@@ -165,7 +165,7 @@ func dataStreamHandler(s network.Stream) {
 		EnsureReset(s)
 		return
 	}
-	log.Log().Infof("Succesffully found connection %v", conn)
+	log.Log().Infof("Successfully found connection %v", conn)
 
 	if conn.Status != ConnectionStatusOpen {
 		log.Log().Errorf("Received data on unopen connection %s", conn.ID)
@@ -183,7 +183,7 @@ func dataStreamHandler(s network.Stream) {
 		log.Log().Infof("Closing data connection from %s", sender)
 		return
 	} else if conn.Witness == GetFullAddr() {
-		log.Log().Info("I am witnessing so sign and forward message %s:%d", d.ConnID, d.SeqNo)
+		log.Log().Infof("I am witnessing so sign and forward message %s:%d", d.ConnID, d.SeqNo)
 		witSig, err := cryptography.Sign(fmt.Sprintf("%s.%d.%s.%s", d.ConnID, d.SeqNo, d.Data, d.SendSig))
 		if err != nil {
 			log.Log().Errorf("Failed to sign data message %s:%d as witness: %s", d.ConnID, d.SeqNo, err.Error())
@@ -191,7 +191,7 @@ func dataStreamHandler(s network.Stream) {
 			return
 		}
 		d.WitSig = witSig
-		log.Log().Info("Successfully signed message %s:%d as witness", d.ConnID, d.SeqNo)
+		log.Log().Infof("Successfully signed message %s:%d as witness", d.ConnID, d.SeqNo)
 
 		witnessReview(conn, d)
 		log.Log().Infof("Finished reviewing message %s:%d is addressed to me", d.ConnID, d.SeqNo)

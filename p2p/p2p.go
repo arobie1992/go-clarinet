@@ -462,7 +462,6 @@ func closeStreamHandler(s network.Stream) {
 		if tx.Error != nil {
 			log.Log().Errorf("Failed to retrieve connection %s from database to close it", req.ConnID)
 			resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
-			s.Write([]byte(SerializeCloseResponse(resp)))
 			if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
 				log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
 			}
@@ -477,7 +476,6 @@ func closeStreamHandler(s network.Stream) {
 		if tx.Error != nil {
 			log.Log().Errorf("Failed to save connection %s to database to close it", req.ConnID)
 			resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
-			s.Write([]byte(SerializeCloseResponse(resp)))
 			if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
 				log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
 			}
