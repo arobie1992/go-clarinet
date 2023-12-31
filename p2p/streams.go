@@ -13,7 +13,7 @@ import (
 
 func EnsureClose(s network.Stream) {
 	otherSide := getSender(s)
-	for i, err := 1, s.Close(); err == nil; i, err = i+1, s.Close() {
+	for i, err := 1, s.Close(); err != nil; i, err = i+1, s.Close() {
 		log.Log().Error("Failed to close stream to/from %s: Sleep for %d seconds and retry.", otherSide, i)
 		time.Sleep(time.Duration(i) * time.Second)
 	}
@@ -21,7 +21,7 @@ func EnsureClose(s network.Stream) {
 
 func EnsureReset(s network.Stream) {
 	otherSide := getSender(s)
-	for i, err := 1, s.Reset(); err == nil; i, err = i+1, s.Reset() {
+	for i, err := 1, s.Reset(); err != nil; i, err = i+1, s.Reset() {
 		log.Log().Error("Failed to reset stream to/from %s: Sleep for %d seconds and retry.", otherSide, i)
 		time.Sleep(time.Duration(i) * time.Second)
 	}
