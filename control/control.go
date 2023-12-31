@@ -85,7 +85,7 @@ func sendConnectRequest(conn *p2p.Connection) error {
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer p2p.EnsureClose(s)
 	log.Log().Infof("Successfully opened stream for conn %s to %s", conn.ID, conn.Receiver)
 
 	req := p2p.ConnectRequest{CT: p2p.ConnectionTypeSubscribe, WS: p2p.WitnessSelectorRequestor, ConnID: conn.ID}
@@ -148,7 +148,7 @@ func requestWitness(conn *p2p.Connection) (string, error) {
 		_, err = s.Write(p2p.SerializeWitnessRequest(req))
 		if err != nil {
 			log.Log().Errorf("Error while sending witness request to %s: %s", addr, err)
-			s.Reset()
+			p2p.EnsureReset(s)
 			continue
 		}
 		log.Log().Info("Sent witness request without error")
@@ -157,7 +157,7 @@ func requestWitness(conn *p2p.Connection) (string, error) {
 		out, err := io.ReadAll(s)
 		if err != nil {
 			log.Log().Errorf("Error while reading response from %s: %s", addr, err)
-			s.Reset()
+			p2p.EnsureReset(s)
 			continue
 		}
 		log.Log().Infof("Got raw response %s", out)
@@ -217,7 +217,7 @@ func notifyReceiverOfWitness(conn *p2p.Connection) error {
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer p2p.EnsureClose(s)
 	log.Log().Infof("Successfully opened connection to %s for conn %s to notify of witness %s", conn.Receiver, conn.ID, conn.Witness)
 
 	req := p2p.WitnessNotification{ConnID: conn.ID, Witness: conn.Witness}
@@ -255,7 +255,7 @@ func sendCloseRequest(conn *p2p.Connection, targetNode string) error {
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer p2p.EnsureClose(s)
 	log.Log().Infof("Successfully opened stream to %s to tell it to close conn %s", targetNode, conn.ID)
 
 	req := p2p.CloseRequest{ConnID: conn.ID}
@@ -297,7 +297,7 @@ func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) ([]byte, [
 	if err != nil {
 		return []byte{}, []byte{}, err
 	}
-	defer s.Close()
+	defer p2p.EnsureClose(s)
 	log.Log().Infof("Successfully opened stream to %s to query for message %s:%d", nodeAddr, conn.ID, seqNo)
 
 	req := p2p.QueryRequest{ConnID: conn.ID, SeqNo: seqNo}
@@ -390,7 +390,7 @@ func forwardQueryResponse(d p2p.DataMessage, resp p2p.QueryResponse, queriedNode
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer p2p.EnsureClose(s)
 	log.Log().Infof("Successfully opnened stream to %s to forward query response %v", forwardNodeAddr, resp)
 
 	fwdSig, err := cryptography.Sign(fmt.Sprintf("%s.%d.%s.%s.%s", d.ConnID, d.SeqNo, resp.MsgHash, resp.Sig, queriedNodeAddr))
@@ -410,7 +410,7 @@ func SendRequestPeersRequest(targetNode string, numPeers int) error {
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer p2p.EnsureClose(s)
 	log.Log().Infof("Successfully opened stream to %s to request %d peers", targetNode, numPeers)
 
 	req := p2p.RequestPeersRequest{NumPeers: numPeers}
