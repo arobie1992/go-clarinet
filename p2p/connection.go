@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -69,5 +70,8 @@ func OpenStream(targetNode string, protocol protocol.ID) (network.Stream, error)
 	if err != nil {
 		return nil, err
 	}
-	return GetLibp2pNode().NewStream(context.Background(), info.ID, protocol)
+	ctx, cf := context.WithTimeout(context.Background(), 2 * time.Second)
+	s, err := GetLibp2pNode().NewStream(ctx, info.ID, protocol)
+	cf()
+	return s, err
 }
