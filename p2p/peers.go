@@ -87,7 +87,7 @@ func requestPeersStreamHandler(s network.Stream) {
 	requestorAddr := s.Conn().RemoteMultiaddr().String() + "/p2p/" + s.Conn().RemotePeer().String()
 	log.Log().Infof("Received request peers stream from %s", requestorAddr)
 
-	s.SetReadDeadline(time.Now().Add(10 * time.Second))
+	s.SetReadDeadline(time.Now().Add(2 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {

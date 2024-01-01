@@ -143,7 +143,7 @@ func dataStreamHandler(s network.Stream) {
 	sender := getSender(s)
 	log.Log().Infof("Received data stream from %s", sender)
 
-	s.SetReadDeadline(time.Now().Add(10 * time.Second))
+	s.SetReadDeadline(time.Now().Add(2 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {

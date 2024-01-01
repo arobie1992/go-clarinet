@@ -96,7 +96,7 @@ func sendConnectRequest(conn *p2p.Connection) error {
 	}
 	log.Log().Infof("Wrote message without error")
 	log.Log().Infof("Preparing to read response")
-	s.SetReadDeadline(time.Now().Add(10 * time.Second))
+	s.SetReadDeadline(time.Now().Add(2 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -155,7 +155,7 @@ func requestWitness(conn *p2p.Connection) (string, error) {
 		log.Log().Info("Sent witness request without error")
 
 		log.Log().Info("Preparing to read response")
-		s.SetReadDeadline(time.Now().Add(10 * time.Second))
+		s.SetReadDeadline(time.Now().Add(2 * time.Second))
 		out, err := io.ReadAll(s)
 		if err != nil {
 			log.Log().Errorf("Error while reading response from %s: %s", addr, err)
@@ -230,7 +230,7 @@ func notifyReceiverOfWitness(conn *p2p.Connection) error {
 	}
 	log.Log().Info("Sent witness notification without error")
 	log.Log().Info("Preparing to read response")
-	s.SetReadDeadline(time.Now().Add(10 * time.Second))
+	s.SetReadDeadline(time.Now().Add(2 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -269,7 +269,7 @@ func sendCloseRequest(conn *p2p.Connection, targetNode string) error {
 	}
 	log.Log().Info("Sent close request without errors")
 	log.Log().Info("Preparing to read response")
-	s.SetReadDeadline(time.Now().Add(10 * time.Second))
+	s.SetReadDeadline(time.Now().Add(2 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -312,7 +312,7 @@ func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) ([]byte, [
 	log.Log().Info("Sent query message without error")
 
 	log.Log().Info("Preparing to read response")
-	s.SetReadDeadline(time.Now().Add(10 * time.Second))
+	s.SetReadDeadline(time.Now().Add(2 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return []byte{}, []byte{}, err
@@ -427,7 +427,7 @@ func SendRequestPeersRequest(targetNode string, numPeers int) error {
 	log.Log().Info("Sent peer request without error")
 
 	log.Log().Info("Preparing to read response")
-	s.SetReadDeadline(time.Now().Add(10 * time.Second))
+	s.SetReadDeadline(time.Now().Add(2 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err

@@ -98,7 +98,7 @@ func queryHandler(s network.Stream) {
 	sender := getSender(s)
 	log.Log().Infof("Received query stream from %s", sender)
 
-	s.SetReadDeadline(time.Now().Add(10 * time.Second))
+	s.SetReadDeadline(time.Now().Add(2 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -229,7 +229,7 @@ func forwardHandler(s network.Stream) {
 	forwarderAddr := s.Conn().RemoteMultiaddr().String() + "/p2p/" + s.Conn().RemotePeer().String()
 	log.Log().Infof("Received forwarded query stream from %s")
 
-	s.SetReadDeadline(time.Now().Add(10 * time.Second))
+	s.SetReadDeadline(time.Now().Add(2 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
