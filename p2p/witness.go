@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/arobie1992/go-clarinet/log"
 	"github.com/arobie1992/go-clarinet/repository"
@@ -144,6 +145,7 @@ func witnessStreamHandler(s network.Stream) {
 	sender := getSender(s)
 	log.Log().Infof("Received witness stream from %s", sender)
 
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -289,6 +291,7 @@ func witnessNotificationStreamHandler(s network.Stream) {
 	sender := getSender(s)
 	log.Log().Infof("Received witness notification stream from %s", sender)
 
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -327,7 +330,7 @@ func witnessNotificationStreamHandler(s network.Stream) {
 	log.Log().Infof("Successfully retrieved connection %s from database", conn.ID)
 
 	conn.Witness = req.Witness
-	log.Log().Infof("Set witness on connecction %s to %s", conn.ID, req.Witness)
+	log.Log().Infof("Set witness on connection %s to %s", conn.ID, req.Witness)
 	conn.Status = ConnectionStatusOpen
 	if tx := repository.GetDB().Save(&conn); tx.Error != nil {
 		log.Log().Errorf("Failed to save connection %s to database", req.ConnID)
