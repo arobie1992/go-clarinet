@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func RequestConnection(targetNode string) (uuid.UUID, error) {
@@ -403,7 +402,7 @@ func forwardQueryResponse(d p2p.DataMessage, resp p2p.QueryResponse, queriedNode
 	if err != nil {
 		return err
 	}
-	
+
 	f := p2p.QueryForward{ConnID: d.ConnID, SeqNo: d.SeqNo, MsgHash: resp.MsgHash, Sig: resp.Sig, Queried: queriedNodeAddr, FwdSig: fwdSig}
 	log.Log().Infof("Added fowarder signature")
 	_, err = s.Write(p2p.SerializeQueryForward(f))
