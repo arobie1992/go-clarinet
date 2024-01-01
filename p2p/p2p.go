@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/arobie1992/go-clarinet/config"
 	"github.com/arobie1992/go-clarinet/cryptography"
@@ -24,7 +25,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/multiformats/go-multiaddr"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var libp2pNode host.Host
@@ -126,6 +126,7 @@ func connectStreamHandler(s network.Stream) {
 	sender := getSender(s)
 	log.Log().Infof("Received connect stream from %s", sender)
 
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -433,6 +434,7 @@ func closeStreamHandler(s network.Stream) {
 	sender := getSender(s)
 	log.Log().Infof("Received close stream from %s", sender)
 
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -458,7 +460,7 @@ func closeStreamHandler(s network.Stream) {
 
 	repository.GetDB().Transaction(func(db *gorm.DB) error {
 		conn := Connection{ID: req.ConnID}
-		tx := db.Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn)
+		tx := db.Find(&conn)
 		if tx.Error != nil {
 			log.Log().Errorf("Failed to retrieve connection %s from database to close it", req.ConnID)
 			resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}

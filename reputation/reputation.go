@@ -43,7 +43,7 @@ func GetAll(peers peer.IDSlice) (AggregateReputations, error) {
 	for i, p := range peers {
 		reputations[i] = ReputationInfo{PeerId: p}
 	}
-	tx := repository.GetDB().Find(&reputations)
+	tx := repository.GetDB().Where(&reputations).Find(&reputations)
 	if tx.Error != nil {
 		return AggregateReputations{}, tx.Error
 	}

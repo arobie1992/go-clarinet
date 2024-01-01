@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/arobie1992/go-clarinet/cryptography"
 	"github.com/arobie1992/go-clarinet/log"
@@ -97,6 +98,7 @@ func queryHandler(s network.Stream) {
 	sender := getSender(s)
 	log.Log().Infof("Received query stream from %s", sender)
 
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -117,7 +119,7 @@ func queryHandler(s network.Stream) {
 	d := DataMessage{ConnID: req.ConnID, SeqNo: req.SeqNo}
 	// if we got an error, it doesn't really matter for the moment since we'll get penalized regardless
 	// realistically would probably want better handling, like notifying the sender
-	if tx := repository.GetDB().Find(&d); tx.Error != nil {
+	if tx := repository.GetDB().Where(&d).Find(&d); tx.Error != nil {
 		log.Log().Errorf("Failed to retreve data message for query request %v from database", req)
 	}
 	log.Log().Infof("Successfully retreved data message for query request %v from database", req)
@@ -227,6 +229,7 @@ func forwardHandler(s network.Stream) {
 	forwarderAddr := s.Conn().RemoteMultiaddr().String() + "/p2p/" + s.Conn().RemotePeer().String()
 	log.Log().Infof("Received forwarded query stream from %s")
 
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -292,7 +295,7 @@ func forwardHandler(s network.Stream) {
 	}
 	log.Log().Infof("Found ref message %v", refMsg)
 
-	conn := Connection{ID: f.ConnID, Sender: "", Witness: "", Receiver: "", Status: -1, NextSeqNo: -1}
+	conn := Connection{ID: f.ConnID}
 	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
 		log.Log().Warnf("Error while querying for connection: %s", err)
 		EnsureReset(s)

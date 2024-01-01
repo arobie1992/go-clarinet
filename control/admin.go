@@ -239,7 +239,7 @@ func query(w http.ResponseWriter, r *http.Request) {
 		seqNo = d.SeqNo
 	}
 
-	conn := p2p.Connection{ID: connID, Sender: "", Witness: "", Receiver: "", Status: -1, NextSeqNo: -1}
+	conn := p2p.Connection{ID: connID}
 	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
 		writeResponse(w, http.StatusInternalServerError, nil, badResp{err.Error(), "Error finding connection."})
 		return

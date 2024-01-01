@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/arobie1992/go-clarinet/cryptography"
 	"github.com/arobie1992/go-clarinet/log"
@@ -96,6 +97,7 @@ func sendConnectRequest(conn *p2p.Connection) error {
 	}
 	log.Log().Infof("Wrote message without error")
 	log.Log().Infof("Preparing to read response")
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -154,6 +156,7 @@ func requestWitness(conn *p2p.Connection) (string, error) {
 		log.Log().Info("Sent witness request without error")
 
 		log.Log().Info("Preparing to read response")
+		s.SetReadDeadline(time.Now().Add(10 * time.Second))
 		out, err := io.ReadAll(s)
 		if err != nil {
 			log.Log().Errorf("Error while reading response from %s: %s", addr, err)
@@ -228,6 +231,7 @@ func notifyReceiverOfWitness(conn *p2p.Connection) error {
 	}
 	log.Log().Info("Sent witness notification without error")
 	log.Log().Info("Preparing to read response")
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -266,6 +270,7 @@ func sendCloseRequest(conn *p2p.Connection, targetNode string) error {
 	}
 	log.Log().Info("Sent close request without errors")
 	log.Log().Info("Preparing to read response")
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -284,7 +289,7 @@ func sendCloseRequest(conn *p2p.Connection, targetNode string) error {
 func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) ([]byte, []byte, error) {
 	log.Log().Infof("Will query node %s for message %s:%d", nodeAddr, conn.ID, seqNo)
 	refMsg := p2p.DataMessage{ConnID: conn.ID, SeqNo: seqNo}
-	if tx := repository.GetDB().Find(&refMsg); tx.Error != nil {
+	if tx := repository.GetDB().Where(&refMsg).Find(&refMsg); tx.Error != nil {
 		return []byte{}, []byte{}, tx.Error
 	}
 	if refMsg.Data == "" {
@@ -308,6 +313,7 @@ func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) ([]byte, [
 	log.Log().Info("Sent query message without error")
 
 	log.Log().Info("Preparing to read response")
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return []byte{}, []byte{}, err
@@ -324,7 +330,7 @@ func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) ([]byte, [
 	if err != nil {
 		return []byte{}, []byte{}, err
 	}
-	log.Log().Info("Got key for node %s", nodeAddr)
+	log.Log().Infof("Got key for node %s", nodeAddr)
 
 	valid, err := key.Verify([]byte(resp.MsgHash), []byte(resp.Sig))
 	if !valid || err != nil {
@@ -422,6 +428,7 @@ func SendRequestPeersRequest(targetNode string, numPeers int) error {
 	log.Log().Info("Sent peer request without error")
 
 	log.Log().Info("Preparing to read response")
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -461,7 +468,7 @@ func CloseConnection(connID uuid.UUID) *CloseError {
 	err := repository.GetDB().Transaction(func(db *gorm.DB) error {
 		log.Log().Infof("Attempting to close connection %s", connID)
 		conn := p2p.Connection{ID: connID}
-		if tx := db.Clauses(clause.Locking{Strength: "UPDATE"}).Find(&conn); tx.Error != nil {
+		if tx := db.Find(&conn); tx.Error != nil {
 			return &CloseError{
 				Err: errors.New(fmt.Sprintf("Failed to find connection: %s", tx.Error)),
 			}
