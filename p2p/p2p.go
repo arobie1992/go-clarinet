@@ -24,7 +24,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/multiformats/go-multiaddr"
-	"gorm.io/gorm"
 )
 
 var libp2pNode host.Host
@@ -126,7 +125,7 @@ func connectStreamHandler(s network.Stream) {
 	sender := getSender(s)
 	log.Log().Infof("Received connect stream from %s", sender)
 
-	s.SetReadDeadline(time.Now().Add(2 * time.Second))
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -434,7 +433,7 @@ func closeStreamHandler(s network.Stream) {
 	sender := getSender(s)
 	log.Log().Infof("Received close stream from %s", sender)
 
-	s.SetReadDeadline(time.Now().Add(2 * time.Second))
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -458,46 +457,44 @@ func closeStreamHandler(s network.Stream) {
 	}
 	log.Log().Infof("Deserialized close request from %s into %v", sender, req)
 
-	repository.GetDB().Transaction(func(db *gorm.DB) error {
-		conn := Connection{ID: req.ConnID}
-		tx := db.Find(&conn)
-		if tx.Error != nil {
-			log.Log().Errorf("Failed to retrieve connection %s from database to close it", req.ConnID)
-			resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
-			if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
-				log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
-			}
-			log.Log().Infof("Sent close response %v to %s without error", resp, sender)
-			EnsureClose(s)
-			log.Log().Infof("Closed close stream from %s", sender)
-			return tx.Error
+	conn := Connection{ID: req.ConnID}
+	tx := repository.GetDB().Find(&conn)
+	if tx.Error != nil {
+		log.Log().Errorf("Failed to retrieve connection %s from database to close it", req.ConnID)
+		resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
+		if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
+			log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
 		}
-
-		conn.Status = ConnectionStatusClosed
-		tx = repository.GetDB().Save(&conn)
-		if tx.Error != nil {
-			log.Log().Errorf("Failed to save connection %s to database to close it", req.ConnID)
-			resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
-			if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
-				log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
-			}
-			log.Log().Infof("Sent close response %v to %s without error", resp, sender)
-			EnsureClose(s)
-			log.Log().Infof("Closed close stream from %s", sender)
-			return tx.Error
-		}
-
-		resp := CloseResponse{CloseResponseStatusSuccess, ""}
-		_, err = s.Write([]byte(SerializeCloseResponse(resp)))
-		if err != nil {
-			log.Log().Errorf("Failed to write response: %s", err.Error())
-			EnsureReset(s)
-			return err
-		}
+		log.Log().Infof("Sent close response %v to %s without error", resp, sender)
 		EnsureClose(s)
 		log.Log().Infof("Closed close stream from %s", sender)
-		return nil
-	})
+		return
+	}
+
+	conn.Status = ConnectionStatusClosed
+	tx = repository.GetDB().Save(&conn)
+	if tx.Error != nil {
+		log.Log().Errorf("Failed to save connection %s to database to close it: %s", req.ConnID, tx.Error)
+		resp := CloseResponse{CloseResponseStatusFailure, tx.Error.Error()}
+		if _, err := s.Write([]byte(SerializeCloseResponse(resp))); err != nil {
+			log.Log().Errorf("Failed to send close response %v to %s", resp, sender)
+		}
+		log.Log().Infof("Sent close response %v to %s without error", resp, sender)
+		EnsureClose(s)
+		log.Log().Infof("Closed close stream from %s", sender)
+		return
+	}
+
+	resp := CloseResponse{CloseResponseStatusSuccess, ""}
+	_, err = s.Write([]byte(SerializeCloseResponse(resp)))
+	if err != nil {
+		log.Log().Errorf("Failed to write response: %s", err.Error())
+		EnsureReset(s)
+		return
+	}
+	EnsureClose(s)
+	log.Log().Infof("Closed close stream from %s", sender)
+	return
 }
 
 func AddPeer(peerAddress string) (*peer.AddrInfo, error) {

@@ -98,7 +98,7 @@ func queryHandler(s network.Stream) {
 	sender := getSender(s)
 	log.Log().Infof("Received query stream from %s", sender)
 
-	s.SetReadDeadline(time.Now().Add(2 * time.Second))
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {
@@ -129,13 +129,13 @@ func queryHandler(s network.Stream) {
 	if err != nil {
 		log.Log().Errorf("Failed to sign hash of message for query request %v: %s", req, err)
 	}
-	log.Log().Infof("Successfully signed hash of message for query request %v: %s", req, err)
+	log.Log().Infof("Successfully signed hash of message for query request %v", req)
 
-	rep := QueryResponse{MsgHash: msgHash, Sig: sig}
-	if _, err := s.Write(SerializeQueryResponse(rep)); err != nil {
-		log.Log().Errorf("Failed to write query response %v to %s", rep, sender)
+	resp := QueryResponse{MsgHash: msgHash, Sig: sig}
+	if _, err := s.Write(SerializeQueryResponse(resp)); err != nil {
+		log.Log().Errorf("Failed to write query response %v to %s", resp, sender)
 	}
-	log.Log().Infof("Wrote query response %v to %s without error", rep, sender)
+	log.Log().Infof("Wrote query response %v to %s without error", resp, sender)
 
 	EnsureClose(s)
 	log.Log().Infof("Closed query stream from %s", sender)
@@ -229,7 +229,7 @@ func forwardHandler(s network.Stream) {
 	forwarderAddr := s.Conn().RemoteMultiaddr().String() + "/p2p/" + s.Conn().RemotePeer().String()
 	log.Log().Infof("Received forwarded query stream from %s")
 
-	s.SetReadDeadline(time.Now().Add(2 * time.Second))
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := bufio.NewReader(s)
 	str, err := buf.ReadString(';')
 	if err != nil {

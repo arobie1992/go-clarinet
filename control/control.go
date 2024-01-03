@@ -15,7 +15,6 @@ import (
 	"github.com/arobie1992/go-clarinet/reputation"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"gorm.io/gorm"
 )
 
 func RequestConnection(targetNode string) (uuid.UUID, error) {
@@ -96,7 +95,7 @@ func sendConnectRequest(conn *p2p.Connection) error {
 	}
 	log.Log().Infof("Wrote message without error")
 	log.Log().Infof("Preparing to read response")
-	s.SetReadDeadline(time.Now().Add(2 * time.Second))
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -155,7 +154,7 @@ func requestWitness(conn *p2p.Connection) (string, error) {
 		log.Log().Info("Sent witness request without error")
 
 		log.Log().Info("Preparing to read response")
-		s.SetReadDeadline(time.Now().Add(2 * time.Second))
+		s.SetReadDeadline(time.Now().Add(10 * time.Second))
 		out, err := io.ReadAll(s)
 		if err != nil {
 			log.Log().Errorf("Error while reading response from %s: %s", addr, err)
@@ -230,7 +229,7 @@ func notifyReceiverOfWitness(conn *p2p.Connection) error {
 	}
 	log.Log().Info("Sent witness notification without error")
 	log.Log().Info("Preparing to read response")
-	s.SetReadDeadline(time.Now().Add(2 * time.Second))
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -269,7 +268,7 @@ func sendCloseRequest(conn *p2p.Connection, targetNode string) error {
 	}
 	log.Log().Info("Sent close request without errors")
 	log.Log().Info("Preparing to read response")
-	s.SetReadDeadline(time.Now().Add(2 * time.Second))
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -312,7 +311,7 @@ func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) ([]byte, [
 	log.Log().Info("Sent query message without error")
 
 	log.Log().Info("Preparing to read response")
-	s.SetReadDeadline(time.Now().Add(2 * time.Second))
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return []byte{}, []byte{}, err
@@ -348,7 +347,7 @@ func QueryForMessage(nodeAddr string, conn p2p.Connection, seqNo int) ([]byte, [
 			log.Log().Errorf("Failed to forward data message %s:%d query response to %s", req.ConnID, req.SeqNo, forwardTarget)
 			return []byte{}, []byte{}, err
 		}
-		log.Log().Info("Successfully forwarded query response to %s", forwardTarget)
+		log.Log().Infof("Successfully forwarded query response to %s", forwardTarget)
 		return p2p.SerializeQueryRequest(req), p2p.SerializeQueryResponse(resp), nil
 	}
 
@@ -427,7 +426,7 @@ func SendRequestPeersRequest(targetNode string, numPeers int) error {
 	log.Log().Info("Sent peer request without error")
 
 	log.Log().Info("Preparing to read response")
-	s.SetReadDeadline(time.Now().Add(2 * time.Second))
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	out, err := io.ReadAll(s)
 	if err != nil {
 		return err
@@ -464,65 +463,53 @@ func (ce *CloseError) Error() string {
 }
 
 func CloseConnection(connID uuid.UUID) *CloseError {
-	err := repository.GetDB().Transaction(func(db *gorm.DB) error {
-		log.Log().Infof("Attempting to close connection %s", connID)
-		conn := p2p.Connection{ID: connID}
-		if tx := db.Find(&conn); tx.Error != nil {
-			return &CloseError{
-				Err: errors.New(fmt.Sprintf("Failed to find connection: %s", tx.Error)),
-			}
+	log.Log().Infof("Attempting to close connection %s", connID)
+	conn := p2p.Connection{ID: connID}
+	if tx := repository.GetDB().Find(&conn); tx.Error != nil {
+		return &CloseError{
+			Err: errors.New(fmt.Sprintf("Failed to find connection: %s", tx.Error)),
 		}
-		defer repository.GetDB().Save(&conn)
-		log.Log().Infof("Found connection %v", conn)
+	}
+	defer repository.GetDB().Save(&conn)
+	log.Log().Infof("Found connection %v", conn)
 
-		if conn.Status == p2p.ConnectionStatusClosed {
-			// already closed so just honor the previous close
-			log.Log().Infof("Connection %s already closed, just skip", conn.ID)
-			return nil
-		}
-
-		var sendErr error = nil
-		var witErr error = nil
-		var recErr error = nil
-
-		conn.Status = p2p.ConnectionStatusClosed
-		for i, p := range conn.Participants() {
-			if p == p2p.GetFullAddr() || p == "" {
-				// skip self
-				continue
-			}
-			log.Log().Infof("Sending close request for conn %s to %s", conn.ID, p)
-			if err := sendCloseRequest(&conn, p); err != nil {
-				switch i {
-				case 0:
-					sendErr = err
-				case 1:
-					witErr = err
-				case 2:
-					recErr = err
-				default:
-					log.Log().Fatalf("Connection %s has too many participants.", conn.ID)
-				}
-			}
-		}
-
-		if sendErr != nil || witErr != nil || recErr != nil {
-			return &CloseError{
-				SenderError:   sendErr,
-				WitnessError:  witErr,
-				ReceiverError: recErr,
-			}
-		}
-		return nil
-	})
-	if err == nil {
+	if conn.Status == p2p.ConnectionStatusClosed {
+		// already closed so just honor the previous close
+		log.Log().Infof("Connection %s already closed, just skip", conn.ID)
 		return nil
 	}
-	log.Log().Infof("There was an error during close %s", err.Error())
-	var closeErr *CloseError
-	if errors.As(err, &closeErr) {
-		return closeErr
+
+	var sendErr error = nil
+	var witErr error = nil
+	var recErr error = nil
+
+	conn.Status = p2p.ConnectionStatusClosed
+	for i, p := range conn.Participants() {
+		if p == p2p.GetFullAddr() || p == "" {
+			// skip self
+			continue
+		}
+		log.Log().Infof("Sending close request for conn %s to %s", conn.ID, p)
+		if err := sendCloseRequest(&conn, p); err != nil {
+			switch i {
+			case 0:
+				sendErr = err
+			case 1:
+				witErr = err
+			case 2:
+				recErr = err
+			default:
+				log.Log().Fatalf("Connection %s has too many participants.", conn.ID)
+			}
+		}
 	}
-	closeErr.Err = err
-	return closeErr
+
+	if sendErr != nil || witErr != nil || recErr != nil {
+		return &CloseError{
+			SenderError:   sendErr,
+			WitnessError:  witErr,
+			ReceiverError: recErr,
+		}
+	}
+	return nil
 }
