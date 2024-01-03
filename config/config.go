@@ -3,8 +3,6 @@ package config
 import (
 	"encoding/json"
 	"os"
-
-	"github.com/arobie1992/go-clarinet/log"
 )
 
 type libp2pConfig struct {
@@ -24,10 +22,6 @@ type Config struct {
 }
 
 func LoadConfig(configPath string) (*Config, error) {
-	if configPath == "" {
-		configPath = "./config.json"
-		log.Log().Infof("No parameter file provided. Will attempt to load default '%s' file.", configPath)
-	}
 	contents, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err
