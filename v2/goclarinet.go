@@ -52,6 +52,10 @@ func NewNode(
 	return &node, nil
 }
 
+func (n *Node) Peers() ([]peer.Peer, error) {
+	return n.peerStore.All()
+}
+
 func (n *Node) Self() (peer.Peer, error) {
 	return n.peerStore.Self()
 }

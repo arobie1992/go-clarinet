@@ -10,6 +10,7 @@ import (
 	"github.com/arobie1992/go-clarinet/v2/data"
 	"github.com/arobie1992/go-clarinet/v2/peer"
 	"github.com/arobie1992/go-clarinet/v2/reputation"
+	"github.com/google/uuid"
 )
 
 type connEntry struct {
@@ -71,7 +72,7 @@ type inMemoryConnectionStore struct {
 }
 
 func NewConnectionStore() connection.ConnectionStore {
-	return &inMemoryConnectionStore{}
+	return &inMemoryConnectionStore{sync.RWMutex{}, map[uuid.UUID]*connEntry{}}
 }
 
 func (cs *inMemoryConnectionStore) Create(sender, receiver peer.Peer, status connection.Status) (connection.ID, error) {

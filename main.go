@@ -1,11 +1,19 @@
 package main
 
 import (
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
+	"io"
 	golog "log"
 	"math"
 	"net"
+	"net/http"
 	"os"
+
+	lcrypto "github.com/libp2p/go-libp2p/core/crypto"
 
 	"github.com/arobie1992/go-clarinet/starterimpl/inmem"
 	"github.com/arobie1992/go-clarinet/starterimpl/libp2p"
@@ -18,14 +26,76 @@ import (
 	"github.com/arobie1992/go-clarinet/v2/transport"
 
 	lp2p "github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
 )
 
-func main() {
-	logger, err := zap.NewZapLogger(log.Info())
+type config struct {
+	Libp2pPort int
+	CertPath   string
+	AdminPort  int
+	LogLevel   string
+}
+
+func loadConfig() config {
+	if len(os.Args) != 2 {
+		golog.Fatalln("Please provide a config.")
+	}
+	cfgPath := os.Args[1]
+	contents, err := os.ReadFile(cfgPath)
+	if err != nil {
+		golog.Fatalf("Failed to read config: %s\n", err)
+	}
+	var cfg config
+	err = json.Unmarshal(contents, &cfg)
+	if err != nil {
+		golog.Fatalf("Failed to parse config: %s\n", err)
+	}
+	return cfg
+}
+
+func initLogger(cfg config) log.Logger {
+	level, err := log.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		golog.Fatalf("Failed to parse log level: %s\n", err)
+	}
+	logger, err := zap.NewZapLogger(level)
 	if err != nil {
 		golog.Fatalf("Failed to initialize logger: %s\n", err)
 	}
+	return logger
+}
 
+func loadPrivKey(file string) (lcrypto.PrivKey, error) {
+	r, err := os.Open(file)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, errors.New("Invalid key format")
+	}
+
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, errors.New("Provided Key was neither PKCS1 nor PKCS8. Please use one of those formats.")
+		}
+	}
+
+	pk, _, err := crypto.KeyPairFromStdKey(key)
+
+	return pk, nil
+}
+
+func initLibp2pHost(logger log.Logger, cfg config) host.Host {
 	hostname, err := os.Hostname()
 	if err != nil {
 		logger.Error("Failed to find computer hostname: %s", err)
@@ -44,15 +114,33 @@ func main() {
 		hostIP = addr
 		break
 	}
-	addr := fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", hostIP, 9000)
-	host, err := lp2p.New(lp2p.ListenAddrStrings(addr), lp2p.DisableRelay())
+	addr := fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", hostIP, cfg.Libp2pPort)
+
+	var host host.Host
+	if cfg.CertPath != "" {
+		priv, err := loadPrivKey(cfg.CertPath)
+		if err != nil {
+			logger.Error("Failed to load private key: %s", err)
+			os.Exit(1)
+		}
+		host, err = lp2p.New(lp2p.ListenAddrStrings(addr), lp2p.Identity(priv), lp2p.DisableRelay())
+	} else {
+		host, err = lp2p.New(lp2p.ListenAddrStrings(addr), lp2p.DisableRelay())
+	}
 	if err != nil {
 		logger.Error("Failed to create libp2p host: %s", err)
 		os.Exit(1)
 	}
-	logger.Info("Created libp2p host with ID %s and addresses %v", host.ID(), host.Addrs())
 
-	peerstore := libp2p.NewPeerStore(host)
+	logger.Info("Created libp2p host with ID %s and addresses %v", host.ID(), host.Addrs())
+	return host
+}
+
+func main() {
+	cfg := loadConfig()
+	logger := initLogger(cfg)
+	host := initLibp2pHost(logger, cfg)
+	peerstore := libp2p.NewPeerStore(host, logger)
 	trpt := libp2p.NewTransport(host)
 	connectionstore := inmem.NewConnectionStore()
 	messagestore := inmem.NewMessageStore()
@@ -122,6 +210,8 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("I am %s and I have addresses %v", self.ID(), self.Addresses())
+
+	startHttpServer(node, logger, &cfg)
 }
 
 type connectHandler struct {
@@ -180,4 +270,166 @@ func (h *closeHandler) Handle(peerID peer.ID, request connection.CloseRequest) e
 
 func (h *closeHandler) Options() transport.Options {
 	return h.options
+}
+
+func startHttpServer(n *v2.Node, logger log.Logger, cfg *config) {
+	http.HandleFunc("/connect", adapt(req{}, &connectHttpHandler{n}))
+	http.HandleFunc("/peer", adapt(req{}, &updatePeerHandler{n}))
+	http.HandleFunc("/peers", getAdapt(req{}, &listPeerHandler{n, logger}))
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.AdminPort), nil); err != nil {
+		panic(fmt.Sprintf("Failed to start http server: %s", err))
+	}
+}
+
+type connectHttpHandler struct {
+	n *v2.Node
+}
+
+func (h *connectHttpHandler) handle(r req) (map[string]string, error) {
+	id, err := libp2p.ParsePeerID(r.PeerID)
+	if err != nil {
+		return nil, err
+	}
+	p := libp2p.NewPeer(id, []peer.Address{})
+	h.n.Connect(p, connection.Options{}, transport.Options{})
+	return map[string]string{"message": fmt.Sprintf("Peer was: %s", r.PeerID)}, nil
+}
+
+type updatePeerHandler struct {
+	n *v2.Node
+}
+
+func (h *updatePeerHandler) handle(r req) (map[string]string, error) {
+	id, err := libp2p.ParsePeerID(r.PeerID)
+	if err != nil {
+		return nil, err
+	}
+	addresses := []peer.Address{}
+	for _, a := range r.Addresses {
+		addresses = append(addresses, peer.Address(a))
+	}
+	if err := h.n.UpdatePeer(libp2p.NewPeer(id, addresses)); err != nil {
+		return nil, err
+	}
+	return map[string]string{"message": fmt.Sprintf("Successfully added peer %s with addresses %v", r.PeerID, r.Addresses)}, nil
+}
+
+type listPeerHandler struct {
+	n   *v2.Node
+	log log.Logger
+}
+
+func (h *listPeerHandler) handle(_ req) (map[string][]peerResp, error) {
+	peers, err := h.n.Peers()
+	if err != nil {
+		return nil, err
+	}
+	mappedPeers := []peerResp{}
+	for _, p := range peers {
+		mappedPeers = append(mappedPeers, peerResp{p.ID(), p.Addresses()})
+	}
+	return map[string][]peerResp{"peers": mappedPeers}, nil
+}
+
+type peerResp struct {
+	ID        peer.ID        `json:"id"`
+	Addresses []peer.Address `json:"addresses"`
+}
+
+type handler[I, O any] interface {
+	handle(I) (O, error)
+}
+
+func writeResponse(w http.ResponseWriter, status int, headers map[string]string, jsonBody interface{}) {
+	if headers != nil {
+		for k, v := range headers {
+			w.Header().Add(k, v)
+		}
+	}
+	if jsonBody != nil {
+		w.Header().Add("Content-Type", "application/json")
+	}
+	w.WriteHeader(status)
+	if jsonBody != nil {
+		m, err := json.Marshal(jsonBody)
+		if err != nil {
+			fmt.Printf("Failed to serialize body: %s", err)
+			// TODO better handling. This is just so the request completes at all.
+			_, err = w.Write([]byte{})
+			if err != nil {
+				fmt.Printf("Failed to write body: %s", err)
+			}
+			return
+		}
+		_, err = w.Write(m)
+		if err != nil {
+			fmt.Printf("Failed to write body: %s", err)
+		}
+	}
+}
+
+func adapt[I, O any](reqType I, h handler[I, O]) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			writeResponse(w, http.StatusMethodNotAllowed, map[string]string{"Allow": "POST"}, nil)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeResponse(w, http.StatusInternalServerError, nil, errResp{Message: "Failed to read request body.", Error: err})
+			return
+		}
+
+		if err := json.Unmarshal(body, &reqType); err != nil {
+			writeResponse(w, http.StatusBadRequest, nil, errResp{Message: "Unable to parse request as JSON.", Error: err})
+			return
+		}
+
+		handleAndReply(w, reqType, h)
+	}
+}
+
+func handleAndReply[I, O any](w http.ResponseWriter, reqType I, h handler[I, O]) {
+	resp, err := h.handle(reqType)
+	if err != nil {
+		writeResponse(w, http.StatusInternalServerError, nil, errResp{Message: "Error during processing.", Error: err})
+		return
+	}
+
+	jsonResp, err := json.Marshal(resp)
+	if err != nil {
+		fmt.Printf("Resp that failed to marshal: %v", resp)
+		writeResponse(w, http.StatusInternalServerError, nil, errResp{Message: "Failed to serialize response as json.", Error: err})
+		return
+	}
+
+	i, err := w.Write(jsonResp)
+	if err != nil {
+		fmt.Printf("Encountered error while writing response %s: %s", jsonResp, err)
+		return
+	}
+	if i != len(jsonResp) {
+		fmt.Printf("Did not write all bytes. Had: %d, Wrote: %d", len(jsonResp), i)
+	}
+}
+
+func getAdapt[I, O any](unused I, h handler[I, O]) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			writeResponse(w, http.StatusMethodNotAllowed, map[string]string{"Allow": "GET"}, nil)
+			return
+		}
+		handleAndReply(w, unused, h)
+	}
+}
+
+type req struct {
+	PeerID    string
+	Addresses []string
+}
+
+type errResp struct {
+	Message string
+	Error   error
 }

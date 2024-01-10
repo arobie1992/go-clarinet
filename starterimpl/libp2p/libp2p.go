@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/arobie1992/go-clarinet/v2/connection"
+	"github.com/arobie1992/go-clarinet/v2/log"
 	"github.com/arobie1992/go-clarinet/v2/peer"
 	"github.com/arobie1992/go-clarinet/v2/transport"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -146,7 +147,9 @@ func (t *libp2pTransport) Send(peer peer.Peer, options transport.Options, data a
 func (t *libp2pTransport) Exchange(peer peer.Peer, options transport.Options, data any, response any) (int, error) {
 	s, err := t.sendInternal(peer, options, data)
 	if err != nil {
-		s.Reset()
+		if s != nil {
+			s.Reset()
+		}
 		return 0, err
 	}
 
@@ -260,18 +263,26 @@ func (t *libp2pTransport) openStream(peer peer.Peer, protocolId protocol.ID, opt
 type libp2pPeerStore struct {
 	selfId peer.ID
 	host   host.Host
+	log    log.Logger
 }
 
-func NewPeerStore(host host.Host) peer.PeerStore {
-	return &libp2pPeerStore{peer.ID(host.ID()), host}
+func NewPeerStore(host host.Host, log log.Logger) peer.PeerStore {
+	return &libp2pPeerStore{peer.ID(host.ID()), host, log}
 }
 
 func (ps *libp2pPeerStore) AddAddr(id peer.ID, addr peer.Address) error {
+	ps.log.Trace("Will add addreess %s for peer %s", addr, id)
 	maddr, err := multiaddr.NewMultiaddr(string(addr))
 	if err != nil {
 		return err
 	}
-	ps.host.Peerstore().AddAddr(libp2pPeer.ID(id.String()), maddr, peerstore.PermanentAddrTTL)
+	ps.log.Trace("Parsed addr %s into multiaddr %s", addr, maddr)
+	libp2pID, err := libp2pPeer.Decode(id.String())
+	if err != nil {
+		return err
+	}
+	ps.log.Trace("Parsed peer ID %s into libp2p peer ID %s", id, libp2pID)
+	ps.host.Peerstore().AddAddr(libp2pID, maddr, peerstore.PermanentAddrTTL)
 	return nil
 }
 
@@ -284,14 +295,19 @@ func (ps *libp2pPeerStore) Find(id peer.ID) (peer.Peer, error) {
 }
 
 func (ps *libp2pPeerStore) All() ([]peer.Peer, error) {
+	ps.log.Trace("Entering libp2pPeerStore All method")
 	peers := []peer.Peer{}
 	for _, libp2pID := range ps.host.Peerstore().Peers() {
+		ps.log.Trace("Found peer %s", libp2pID)
 		p := lp2pPeer{peer.ID(libp2pID), []peer.Address{}}
+		ps.log.Trace("Created peer {%s %v}", p.id, p.addresses)
 		peers = append(peers, &p)
-		for _, addr := range ps.host.Addrs() {
+		for _, addr := range ps.host.Peerstore().Addrs(libp2pID) {
+			ps.log.Trace("Found address %s for peer %s", addr, p.id)
 			p.addresses = append(p.addresses, peer.Address(addr.String()))
 		}
 	}
+	ps.log.Trace("Compiled list of all peers: %v", peers)
 	return peers, nil
 }
 
@@ -302,6 +318,14 @@ func (ps *libp2pPeerStore) Self() (peer.Peer, error) {
 type lp2pPeer struct {
 	id        peer.ID
 	addresses []peer.Address
+}
+
+func ParsePeerID(id string) (peer.ID, error) {
+	return libp2pPeer.Decode(id)
+}
+
+func NewPeer(id peer.ID, addresses []peer.Address) peer.Peer {
+	return &lp2pPeer{id, addresses}
 }
 
 func (p *lp2pPeer) ID() peer.ID {
