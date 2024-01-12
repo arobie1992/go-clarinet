@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/arobie1992/go-clarinet/v2/log"
+	"go.uber.org/zap"
 	zl "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -44,6 +45,8 @@ func NewZapLogger(level log.Level) (log.Logger, error) {
 	if err != nil {
 		return nil, err
 	}
+	// ignore the wrapper log interface
+	zapLogger = zapLogger.WithOptions(zap.AddCallerSkip(1))
 
 	return &ZapLogger{zapLogger.Sugar(), level}, nil
 }
@@ -69,4 +72,8 @@ func (l *ZapLogger) Warn(fmtMsg string, values ...any) {
 
 func (l *ZapLogger) Error(fmtMsg string, values ...any) {
 	l.zapLogger.Errorf(fmtMsg, values...)
+}
+
+func (l *ZapLogger) Level() log.Level {
+	return l.level
 }

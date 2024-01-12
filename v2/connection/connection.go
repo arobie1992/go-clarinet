@@ -31,6 +31,7 @@ type Connection interface {
 
 type Status interface {
 	connectionStatus()
+	String() string
 }
 
 type requestingReceiver struct{}
@@ -97,15 +98,16 @@ type ConnectionStore interface {
 	Read(id ID, readFunc func(conn Connection) error) error
 	Create(sender, receiver peer.Peer, status Status) (ID, error)
 	Accept(id ID, sender, receiver peer.Peer, status Status) error
+	All() ([]ID, error)
 }
 
 type Options struct {
-	WitnessSelector   WitnessSelector `json:"witnessSelector"`
-	AdditionalOptions map[string]any  `json:"additionalOptions"`
+	WitnessSelector WitnessSelector
 }
 
 type WitnessSelector interface {
 	witnessSelector()
+	String() string
 }
 
 type senderSelects struct{}
@@ -122,6 +124,17 @@ var recvSelect WitnessSelector = &receiverSelects{}
 
 func WitnessSelectorSender() WitnessSelector   { return sendSelect }
 func WitnessSelectorReceiver() WitnessSelector { return recvSelect }
+
+func ParseWitnessSelector(s string) (WitnessSelector, error) {
+	switch s {
+	case sendSelect.String():
+		return sendSelect, nil
+	case recvSelect.String():
+		return recvSelect, nil
+	default:
+		return nil, fmt.Errorf("Unrecognized witness selector type: %s", s)
+	}
+}
 
 type ConnectRequest struct {
 	ConnID   ID      `json:"connId"`
@@ -142,7 +155,7 @@ type ConnectResponse struct {
 	//
 	// The underlying transport may use this to notify the sender of errors or may use some
 	// other method to inform the sender-side transport layer that it should signal an error.
-	Errors        []error  `json:"errors"`
+	Errors        []string `json:"errors"`
 	Accepted      bool     `json:"accepted"`
 	RejectReasons []string `json:"rejectReasons"`
 }
@@ -175,7 +188,7 @@ type WitnessResponse struct {
 	//
 	// The underlying transport may use this to notify the sender of errors or may use some
 	// other method to inform the sender-side transport layer that it should signal an error.
-	Errors        []error  `json:"errors"`
+	Errors        []string `json:"errors"`
 	Accepted      bool     `json:"accepted"`
 	RejectReasons []string `json:"rejectReasons"`
 }

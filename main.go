@@ -30,11 +30,17 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 )
 
+func die(l log.Logger, message string, args ...any) {
+	l.Error(message, args...)
+	os.Exit(1)
+}
+
 type config struct {
 	Libp2pPort int
 	CertPath   string
 	AdminPort  int
 	LogLevel   string
+	Host       string
 }
 
 func loadConfig() config {
@@ -96,40 +102,40 @@ func loadPrivKey(file string) (lcrypto.PrivKey, error) {
 }
 
 func initLibp2pHost(logger log.Logger, cfg config) host.Host {
-	hostname, err := os.Hostname()
-	if err != nil {
-		logger.Error("Failed to find computer hostname: %s", err)
-		os.Exit(1)
-	}
-	addrs, err := net.LookupHost(hostname)
-	if err != nil {
-		logger.Error("Failed to find addresses for hostname: %s", err)
-		os.Exit(1)
-	}
-	var hostIP string
-	for _, addr := range addrs {
-		if net.ParseIP(addr).IsLoopback() {
-			continue
+	hostIP := cfg.Host
+	if hostIP == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			die(logger, "Failed to find computer hostname: %s", err)
 		}
-		hostIP = addr
-		break
+		addrs, err := net.LookupHost(hostname)
+		if err != nil {
+			die(logger, "Failed to find addresses for hostname: %s", err)
+		}
+		for _, addr := range addrs {
+			if net.ParseIP(addr).IsLoopback() {
+				continue
+			}
+			hostIP = addr
+			break
+		}
 	}
 	addr := fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", hostIP, cfg.Libp2pPort)
 
+	var err error
 	var host host.Host
 	if cfg.CertPath != "" {
-		priv, err := loadPrivKey(cfg.CertPath)
+		var priv crypto.PrivKey
+		priv, err = loadPrivKey(cfg.CertPath)
 		if err != nil {
-			logger.Error("Failed to load private key: %s", err)
-			os.Exit(1)
+			die(logger, "Failed to load private key: %s", err)
 		}
 		host, err = lp2p.New(lp2p.ListenAddrStrings(addr), lp2p.Identity(priv), lp2p.DisableRelay())
 	} else {
 		host, err = lp2p.New(lp2p.ListenAddrStrings(addr), lp2p.DisableRelay())
 	}
 	if err != nil {
-		logger.Error("Failed to create libp2p host: %s", err)
-		os.Exit(1)
+		die(logger, "Failed to create libp2p host: %s", err)
 	}
 
 	logger.Info("Created libp2p host with ID %s and addresses %v", host.ID(), host.Addrs())
@@ -141,8 +147,8 @@ func main() {
 	logger := initLogger(cfg)
 	host := initLibp2pHost(logger, cfg)
 	peerstore := libp2p.NewPeerStore(host, logger)
-	trpt := libp2p.NewTransport(host)
-	connectionstore := inmem.NewConnectionStore()
+	trpt := libp2p.NewTransport(host, logger)
+	connectionstore := inmem.NewConnectionStore(logger)
 	messagestore := inmem.NewMessageStore()
 	reputationstoree := inmem.NewReputationStore(nil)
 
@@ -200,14 +206,12 @@ func main() {
 	)
 
 	if err != nil {
-		logger.Error("Got error while creating node: %s", err)
-		os.Exit(1)
+		die(logger, "Got error while creating node: %s", err)
 	}
 
 	self, err := node.Self()
 	if err != nil {
-		logger.Error("Got error while attempting to retrieve self: %s", err)
-		os.Exit(1)
+		die(logger, "Got error while attempting to retrieve self: %s", err)
 	}
 	logger.Info("I am %s and I have addresses %v", self.ID(), self.Addresses())
 
@@ -221,7 +225,7 @@ type connectHandler struct {
 func (h *connectHandler) Handle(peerID peer.ID, request connection.ConnectRequest) (connection.ConnectResponse, error) {
 	return connection.ConnectResponse{
 		ConnID:        request.ConnID,
-		Errors:        []error{},
+		Errors:        []string{},
 		Accepted:      true,
 		RejectReasons: []string{},
 	}, nil
@@ -238,7 +242,7 @@ type witnessHandler struct {
 func (h *witnessHandler) Handle(peerID peer.ID, request connection.WitnessRequest) (connection.WitnessResponse, error) {
 	return connection.WitnessResponse{
 		ConnID:        request.ConnID,
-		Errors:        []error{},
+		Errors:        []string{},
 		Accepted:      true,
 		RejectReasons: []string{},
 	}, nil
@@ -276,6 +280,7 @@ func startHttpServer(n *v2.Node, logger log.Logger, cfg *config) {
 	http.HandleFunc("/connect", adapt(req{}, &connectHttpHandler{n}))
 	http.HandleFunc("/peer", adapt(req{}, &updatePeerHandler{n}))
 	http.HandleFunc("/peers", getAdapt(req{}, &listPeerHandler{n, logger}))
+	http.HandleFunc("/connections", getAdapt(req{}, &listConnectionsHandler{n, logger}))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.AdminPort), nil); err != nil {
 		panic(fmt.Sprintf("Failed to start http server: %s", err))
 	}
@@ -290,9 +295,16 @@ func (h *connectHttpHandler) handle(r req) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := libp2p.NewPeer(id, []peer.Address{})
-	h.n.Connect(p, connection.Options{}, transport.Options{})
-	return map[string]string{"message": fmt.Sprintf("Peer was: %s", r.PeerID)}, nil
+	addrs := []peer.Address{}
+	for _, a := range r.Addresses {
+		addrs = append(addrs, peer.Address(a))
+	}
+	p := libp2p.NewPeer(id, addrs)
+	connID, err := h.n.Connect(p, connection.Options{WitnessSelector: connection.WitnessSelectorSender()}, transport.Options{})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"connectionId": fmt.Sprintf("%s", connID)}, nil
 }
 
 type updatePeerHandler struct {
@@ -336,6 +348,38 @@ type peerResp struct {
 	Addresses []peer.Address `json:"addresses"`
 }
 
+type listConnectionsHandler struct {
+	n *v2.Node
+	l log.Logger
+}
+
+func (h *listConnectionsHandler) handle(_ req) (map[string][]connResp, error) {
+	connections, err := h.n.Connections()
+	h.l.Trace("Found connections %v", connections)
+	if err != nil {
+		return nil, err
+	}
+	connResps := []connResp{}
+	for _, c := range connections {
+		h.l.Trace("Converting connection %v to readonly conn", c)
+		id := fmt.Sprintf("%s", c.ID())
+		sender := fmt.Sprintf("%s", c.Sender())
+		witness := fmt.Sprintf("%s", c.Witness())
+		receiver := fmt.Sprintf("%s", c.Receiver())
+		status := fmt.Sprintf("%s", c.Status())
+		connResps = append(connResps, connResp{id, sender, witness, receiver, status})
+	}
+	return map[string][]connResp{"connections": connResps}, nil
+}
+
+type connResp struct {
+	ID       string
+	Sender   string
+	Witness  string
+	Receiver string
+	Status   string
+}
+
 type handler[I, O any] interface {
 	handle(I) (O, error)
 }
@@ -377,12 +421,12 @@ func adapt[I, O any](reqType I, h handler[I, O]) func(http.ResponseWriter, *http
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			writeResponse(w, http.StatusInternalServerError, nil, errResp{Message: "Failed to read request body.", Error: err})
+			writeResponse(w, http.StatusInternalServerError, nil, errResp{Message: "Failed to read request body.", Error: err.Error()})
 			return
 		}
 
 		if err := json.Unmarshal(body, &reqType); err != nil {
-			writeResponse(w, http.StatusBadRequest, nil, errResp{Message: "Unable to parse request as JSON.", Error: err})
+			writeResponse(w, http.StatusBadRequest, nil, errResp{Message: "Unable to parse request as JSON.", Error: err.Error()})
 			return
 		}
 
@@ -393,14 +437,14 @@ func adapt[I, O any](reqType I, h handler[I, O]) func(http.ResponseWriter, *http
 func handleAndReply[I, O any](w http.ResponseWriter, reqType I, h handler[I, O]) {
 	resp, err := h.handle(reqType)
 	if err != nil {
-		writeResponse(w, http.StatusInternalServerError, nil, errResp{Message: "Error during processing.", Error: err})
+		writeResponse(w, http.StatusInternalServerError, nil, errResp{Message: "Error during processing.", Error: err.Error()})
 		return
 	}
 
 	jsonResp, err := json.Marshal(resp)
 	if err != nil {
 		fmt.Printf("Resp that failed to marshal: %v", resp)
-		writeResponse(w, http.StatusInternalServerError, nil, errResp{Message: "Failed to serialize response as json.", Error: err})
+		writeResponse(w, http.StatusInternalServerError, nil, errResp{Message: "Failed to serialize response as json.", Error: err.Error()})
 		return
 	}
 
@@ -431,5 +475,5 @@ type req struct {
 
 type errResp struct {
 	Message string
-	Error   error
+	Error   string
 }

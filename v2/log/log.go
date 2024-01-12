@@ -11,6 +11,7 @@ type Logger interface {
 	Info(fmtMsg string, values ...any)
 	Warn(fmtMsg string, values ...any)
 	Error(fmtMsg string, values ...any)
+	Level() Level
 }
 
 type Level interface {

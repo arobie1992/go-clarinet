@@ -1,6 +1,7 @@
 package v2
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/arobie1992/go-clarinet/v2/connection"
@@ -9,6 +10,7 @@ import (
 	"github.com/arobie1992/go-clarinet/v2/peer"
 	"github.com/arobie1992/go-clarinet/v2/reputation"
 	"github.com/arobie1992/go-clarinet/v2/transport"
+	"github.com/google/uuid"
 )
 
 type Node struct {
@@ -52,6 +54,67 @@ func NewNode(
 	return &node, nil
 }
 
+type readOnlyConnection struct {
+	id       connection.ID
+	sender   peer.ID
+	witness  peer.ID
+	receiver peer.ID
+	status   connection.Status
+}
+
+func (c readOnlyConnection) String() string {
+	return fmt.Sprintf("{%s %s %s %s %s}", c.id, c.sender, c.witness, c.receiver, c.status)
+}
+
+func (c readOnlyConnection) ID() connection.ID {
+	return c.id
+}
+
+func (c readOnlyConnection) Receiver() peer.ID {
+	return c.receiver
+}
+
+func (c readOnlyConnection) Sender() peer.ID {
+	return c.sender
+}
+
+func (_ readOnlyConnection) SetStatus(status connection.Status) (connection.Connection, error) {
+	return nil, errors.ErrUnsupported
+}
+
+func (_ readOnlyConnection) SetWitness(peerID peer.ID) (connection.Connection, error) {
+	return nil, errors.ErrUnsupported
+}
+
+func (c readOnlyConnection) Status() connection.Status {
+	return c.status
+}
+
+func (c readOnlyConnection) Witness() peer.ID {
+	return c.witness
+}
+
+// Connections returns a read only view of all the conncetions in the node's peerstore
+func (n *Node) Connections() ([]connection.Connection, error) {
+	ids, err := n.connectionStore.All()
+	if err != nil {
+		return nil, err
+	}
+	n.log.Trace("Found connection IDs %v", ids)
+	conns := []connection.Connection{}
+	for _, id := range ids {
+		err := n.connectionStore.Read(id, func(conn connection.Connection) error {
+			c := readOnlyConnection{conn.ID(), conn.Sender(), conn.Witness(), conn.Receiver(), conn.Status()}
+			conns = append(conns, c)
+			return nil
+		})
+		if err != nil {
+			n.log.Error("Encountered error while reading connection %s: %s", id, err)
+		}
+	}
+	return conns, nil
+}
+
 func (n *Node) Peers() ([]peer.Peer, error) {
 	return n.peerStore.All()
 }
@@ -68,27 +131,34 @@ func (n *Node) UpdatePeer(peer peer.Peer) error {
 		if err := n.peerStore.AddAddr(peer.ID(), addr); err != nil {
 			return err
 		}
+		if n.log.Level().AtLeast(log.Trace()) {
+			p, err := n.peerStore.Find(peer.ID())
+			if err != nil {
+				n.log.Error("Error while retrieving peer to verify: %s", err)
+			}
+			n.log.Trace("Added peer: {%s %v}", p.ID(), p.Addresses())
+		}
 	}
 	return nil
 }
 
 // Connect establishes an outgoing connection to the specified peer and attempts to set up the connection as far as possible.
-func (n *Node) Connect(receiver peer.Peer, connOptions connection.Options, transportOptions transport.Options) error {
+func (n *Node) Connect(receiver peer.Peer, connOptions connection.Options, transportOptions transport.Options) (connection.ID, error) {
 	if err := n.UpdatePeer(receiver); err != nil {
-		return err
+		return uuid.UUID{}, err
 	}
 
 	self, err := n.peerStore.Self()
 	if err != nil {
-		return err
+		return uuid.UUID{}, err
 	}
 
 	connID, err := n.connectionStore.Create(self, receiver, connection.RequestingReceiver())
 	if err != nil {
-		return err
+		return uuid.UUID{}, err
 	}
 
-	return n.connectionStore.Update(connID, func(conn connection.Connection) (connection.Connection, error) {
+	err = n.connectionStore.Update(connID, func(conn connection.Connection) (connection.Connection, error) {
 		receiver, err := n.peerStore.Find(conn.Receiver())
 		if err != nil {
 			return nil, err
@@ -104,6 +174,7 @@ func (n *Node) Connect(receiver peer.Peer, connOptions connection.Options, trans
 
 		return n.handleWitnessSelection(conn, connOptions, transportOptions)
 	})
+	return connID, err
 }
 
 func (n *Node) handleWitnessSelection(
@@ -202,7 +273,13 @@ func (n *Node) requestConnection(dest peer.Peer, conn connection.Connection, con
 		return fmt.Errorf("ConnectResponse contained the incorrect connection ID. Got: %s, Expected: %s", connectResponse.ConnID, conn.ID())
 	}
 
+	n.log.Trace("Preparing to check errors %v", connectResponse.Errors)
+	for i, e := range connectResponse.Errors {
+		n.log.Trace("Error %d is %s", i, e)
+	}
 	if connectResponse.Errors != nil && len(connectResponse.Errors) > 0 {
+		n.log.Trace("Errors == nil is %t", connectResponse.Errors == nil)
+		n.log.Trace("len(Errors) is %d", len(connectResponse.Errors))
 		return fmt.Errorf("Encountered the following errors while requesting the connection: %v", connectResponse.Errors)
 	}
 
@@ -346,60 +423,72 @@ func (h *connectHandlerAdapter) Handle(peerID peer.ID, request connection.Connec
 	if err != nil {
 		return connection.ConnectResponse{
 			ConnID:        request.ConnID,
-			Errors:        []error{err},
+			Errors:        []string{err.Error()},
 			Accepted:      false,
 			RejectReasons: []string{},
 		}, nil
 	}
+	h.node.log.Trace("Found sender in peerstore: %s", sender)
 
 	receiver, err := h.node.peerStore.Find(request.Receiver)
 	if err != nil {
 		return connection.ConnectResponse{
 			ConnID:        request.ConnID,
-			Errors:        []error{err},
+			Errors:        []string{err.Error()},
 			Accepted:      false,
 			RejectReasons: []string{},
 		}, nil
 	}
+	h.node.log.Trace("Found receiver in peerstore: %s", receiver)
 
 	if sender.ID() != peerID && receiver.ID() != peerID {
 		return connection.ConnectResponse{
 			ConnID:        request.ConnID,
-			Errors:        []error{},
+			Errors:        []string{},
 			Accepted:      false,
 			RejectReasons: []string{"Will not accept connection from node that is not either the sender or the receiver."},
 		}, nil
 	}
+	h.node.log.Trace("ConnectRequest is from a node that is either going to be the sender or the receiver, so is permitted.")
 
 	self, err := h.node.peerStore.Self()
 	if err != nil {
 		return connection.ConnectResponse{
 			ConnID:        request.ConnID,
-			Errors:        []error{err},
+			Errors:        []string{err.Error()},
 			Accepted:      false,
 			RejectReasons: []string{},
 		}, nil
 	}
+	h.node.log.Trace("Got self: %s", self)
 
 	if sender.ID() != self.ID() && receiver.ID() != self.ID() {
 		return connection.ConnectResponse{
 			ConnID:        request.ConnID,
-			Errors:        []error{},
+			Errors:        []string{},
 			Accepted:      false,
 			RejectReasons: []string{"Connection is not to or from this node."},
 		}, nil
 	}
+	h.node.log.Trace("ConnectRequest is for a connection that would either be to or from this node, so is permitted.")
 
 	resp, err := h.userHandler.Handle(peerID, request)
-	if err != nil || resp.Errors != nil || len(resp.Errors) > 0 || !resp.Accepted {
+	if err != nil || len(resp.Errors) > 0 || !resp.Accepted {
+		h.node.log.Debug("Connection will not be added to peer store")
+		if h.node.log.Level().AtLeast(log.Trace()) {
+			h.node.log.Trace("err != nil: %t", err != nil)
+			h.node.log.Trace("len(resp.Errors): %d", len(resp.Errors))
+			h.node.log.Trace("!resp.Accepted: %t", !resp.Accepted)
+		}
 		return resp, err
 	}
-
-	if err := h.node.connectionStore.Accept(request.ConnID, sender, receiver, connection.RequestingWitness()); err != nil {
+	h.node.log.Trace("Got response from handler: %v", resp)
+	h.node.log.Debug("Preparing to accept connection %s into peerstore", request.ConnID)
+	if err := h.node.connectionStore.Accept(request.ConnID, sender, receiver, connection.AwaitingWitness()); err != nil {
 		if resp.Errors == nil {
-			resp.Errors = []error{}
+			resp.Errors = []string{}
 		}
-		resp.Errors = append(resp.Errors, err)
+		resp.Errors = append(resp.Errors, err.Error())
 		return resp, nil
 	}
 
@@ -431,7 +520,7 @@ func (h *witnessHandlerAdapter) Handle(peerID peer.ID, request connection.Witnes
 	if err != nil {
 		return connection.WitnessResponse{
 			ConnID:        request.ConnID,
-			Errors:        []error{err},
+			Errors:        []string{err.Error()},
 			Accepted:      false,
 			RejectReasons: []string{},
 		}, nil
@@ -441,7 +530,7 @@ func (h *witnessHandlerAdapter) Handle(peerID peer.ID, request connection.Witnes
 	if err != nil {
 		return connection.WitnessResponse{
 			ConnID:        request.ConnID,
-			Errors:        []error{err},
+			Errors:        []string{err.Error()},
 			Accepted:      false,
 			RejectReasons: []string{},
 		}, nil
@@ -450,24 +539,32 @@ func (h *witnessHandlerAdapter) Handle(peerID peer.ID, request connection.Witnes
 	if sender.ID() != peerID && receiver.ID() != peerID {
 		return connection.WitnessResponse{
 			ConnID:        request.ConnID,
-			Errors:        []error{},
+			Errors:        []string{},
 			Accepted:      false,
 			RejectReasons: []string{"Will not accept connection from node that is not either the sender or the receiver."},
 		}, nil
 	}
 
 	resp, err := h.userHandler.Handle(peerID, request)
-	if err != nil || resp.Errors != nil || len(resp.Errors) > 0 || !resp.Accepted {
+	if err != nil || len(resp.Errors) > 0 || !resp.Accepted {
 		return resp, err
 	}
 
 	if err := h.node.connectionStore.Accept(request.ConnID, sender, receiver, connection.Open()); err != nil {
 		if resp.Errors == nil {
-			resp.Errors = []error{}
+			resp.Errors = []string{}
 		}
-		resp.Errors = append(resp.Errors, err)
+		resp.Errors = append(resp.Errors, err.Error())
 		return resp, nil
 	}
+
+	h.node.connectionStore.Update(request.ConnID, func(conn connection.Connection) (connection.Connection, error) {
+		self, err := h.node.Self()
+		if err != nil {
+			return nil, err
+		}
+		return conn.SetWitness(self.ID())
+	})
 
 	return resp, nil
 }
@@ -485,20 +582,24 @@ func (h *witnessNotificationHandlerAdapter) Handle(peerID peer.ID, notification 
 	return h.node.connectionStore.Update(notification.ConnectionID, func(conn connection.Connection) (connection.Connection, error) {
 		if conn.Status() != connection.AwaitingWitness() {
 			return nil, fmt.Errorf(
-				"Received witness notification from peer %s for connection %s that is not await witness notification.",
+				"Received witness notification from peer %s for connection %s that is not awaiting witness notification.",
 				peerID,
 				conn.ID(),
 			)
 		}
+		h.node.log.Trace("Connection %s is in %s so will update", conn.ID(), connection.AwaitingWitness())
+
 		self, err := h.node.peerStore.Self()
 		if err != nil {
 			return nil, err
 		}
+		h.node.log.Trace("Successfully got self")
 
 		expectedPeer := conn.Sender()
 		if expectedPeer == self.ID() {
 			expectedPeer = conn.Receiver()
 		}
+		h.node.log.Debug("Expecting witness notification from: %s", expectedPeer)
 
 		if peerID != expectedPeer {
 			return nil, fmt.Errorf(
@@ -508,8 +609,13 @@ func (h *witnessNotificationHandlerAdapter) Handle(peerID peer.ID, notification 
 				peerID,
 			)
 		}
+		h.node.log.Trace("Witness notification came from expected peer")
 
-		return conn.SetWitness(notification.Witness)
+		conn, err = conn.SetWitness(notification.Witness)
+		if err != nil {
+			return nil, err
+		}
+		return conn.SetStatus(connection.Open())
 	})
 }
 
