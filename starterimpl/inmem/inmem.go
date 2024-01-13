@@ -220,10 +220,6 @@ func (m inMemoryMessage) VerifyWitness(publicKey crypto.PublicKey) (bool, error)
 	return publicKey.Verify(m.witnessSegs(), m.witnessSig)
 }
 
-func NewMessage() data.Message {
-	return inMemoryMessage{}
-}
-
 type inMemoryMessageStore struct {
 	globalLock sync.RWMutex
 	messages   map[string]data.Message
@@ -319,16 +315,13 @@ type inMemoryReputationStore struct {
 }
 
 func NewReputationStore(createFunc func(peerID peer.ID) reputation.Reputation) reputation.ReputationStore {
-	if createFunc == nil {
-		return &inMemoryReputationStore{
-			globalLock: sync.RWMutex{},
-			reps:       map[peer.ID]*repEntry{},
-			createFunc: func(peerID peer.ID) reputation.Reputation {
-				return proportionalReputation{peerID, 0, 0}
-			},
+	cf := createFunc
+	if cf == nil {
+		cf = func(peerID peer.ID) reputation.Reputation {
+			return proportionalReputation{peerID, 0, 0}
 		}
 	}
-	return &inMemoryReputationStore{createFunc: createFunc}
+	return &inMemoryReputationStore{sync.RWMutex{}, map[peer.ID]*repEntry{}, cf}
 }
 
 func (rs *inMemoryReputationStore) ensureRepExists(peerID peer.ID) *repEntry {
@@ -349,17 +342,17 @@ func (rs *inMemoryReputationStore) ensureRepExists(peerID peer.ID) *repEntry {
 	panic(fmt.Sprintf("Creation of reputation for peer %s failed.", peerID))
 }
 
-func (rs *inMemoryReputationStore) ReadOperation(peerID peer.ID, readFunc func(rep reputation.Reputation) error) error {
+func (rs *inMemoryReputationStore) Read(peerID peer.ID, readFunc func(rep reputation.Reputation) error) error {
 	e := rs.ensureRepExists(peerID)
 	e.lock.RLock()
 	defer e.lock.RUnlock()
 	return readFunc(e.rep)
 }
 
-func (rs *inMemoryReputationStore) WriteOperation(peerID peer.ID, writeFunc func(rep reputation.Reputation) (reputation.Reputation, error)) error {
+func (rs *inMemoryReputationStore) Update(peerID peer.ID, writeFunc func(rep reputation.Reputation) (reputation.Reputation, error)) error {
 	e := rs.ensureRepExists(peerID)
 	e.lock.Lock()
-	e.lock.Unlock()
+	defer e.lock.Unlock()
 	updated, err := writeFunc(e.rep)
 	if updated != nil {
 		e.rep = updated

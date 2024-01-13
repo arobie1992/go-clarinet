@@ -301,7 +301,7 @@ func (n *Node) witnessCandidates(conn connection.Connection) ([]peer.Peer, error
 			continue
 		}
 
-		err := n.reputationStore.ReadOperation(p.ID(), func(rep reputation.Reputation) error {
+		err := n.reputationStore.Read(p.ID(), func(rep reputation.Reputation) error {
 			trusted, err := n.trusts(rep)
 			if err != nil {
 				return err

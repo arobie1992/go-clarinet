@@ -164,7 +164,7 @@ func main() {
 
 		repVals := []float64{}
 		for _, p := range peers {
-			err := reputationstoree.ReadOperation(p.ID(), func(rep reputation.Reputation) error {
+			err := reputationstoree.Read(p.ID(), func(rep reputation.Reputation) error {
 				repVals = append(repVals, rep.Value())
 				return nil
 			})

@@ -16,13 +16,13 @@ type Reputation interface {
 // must always pass a meaningful value to the readFunc or writeFunc. Implementations are free to approach this however
 // they please.
 type ReputationStore interface {
-	// WriteOperation allows modification of the reputation corresponding to the provided peer.
+	// Update allows modification of the reputation corresponding to the provided peer.
 	//
 	// The reputation returned from writeFunc is used to persist any changes. This applies
 	// even if writeFunc also returns an error. Return a nil reputation to signal that no
 	// persistence should occur.
-	WriteOperation(peerID peer.ID, writeFunc func(rep Reputation) (Reputation, error)) error
-	ReadOperation(peerID peer.ID, readFunc func(rep Reputation) error) error
+	Update(peerID peer.ID, writeFunc func(rep Reputation) (Reputation, error)) error
+	Read(peerID peer.ID, readFunc func(rep Reputation) error) error
 }
 
 type TrustFunction = func(rep Reputation) (bool, error)
