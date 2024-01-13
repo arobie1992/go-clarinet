@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type ID uuid.UUID;
+type ID uuid.UUID
 
 type Connection interface {
 	ID() ID
@@ -137,14 +137,14 @@ func ParseWitnessSelector(s string) (WitnessSelector, error) {
 }
 
 type ConnectRequest struct {
-	ConnID   ID      `json:"connId"`
-	Sender   peer.ID `json:"sender"`
-	Receiver peer.ID `json:"receiver"`
-	Options  Options `json:"options"`
+	ConnID   ID
+	Sender   peer.ID
+	Receiver peer.ID
+	Options  Options
 }
 
 type ConnectResponse struct {
-	ConnID ID `json:"connId"`
+	ConnID ID
 	// Errors represent any errors that may have occurred during processing of the request
 	// that the receiver would like to make the sender aware of.
 	// This is distinct from the decision to not accept the connection for whatever business
@@ -155,9 +155,9 @@ type ConnectResponse struct {
 	//
 	// The underlying transport may use this to notify the sender of errors or may use some
 	// other method to inform the sender-side transport layer that it should signal an error.
-	Errors        []string `json:"errors"`
-	Accepted      bool     `json:"accepted"`
-	RejectReasons []string `json:"rejectReasons"`
+	Errors        []string
+	Accepted      bool
+	RejectReasons []string
 }
 
 type ConnectRejectError struct {
@@ -170,14 +170,14 @@ func (e *ConnectRejectError) Error() string {
 }
 
 type WitnessRequest struct {
-	ConnID   ID      `json:"connId"`
-	Sender   peer.ID `json:"sender"`
-	Receiver peer.ID `json:"receiver"`
-	Options  Options `json:"options"`
+	ConnID   ID
+	Sender   peer.ID
+	Receiver peer.ID
+	Options  Options
 }
 
 type WitnessResponse struct {
-	ConnID ID `json:"connId"`
+	ConnID ID
 	// Errors represent any errors that may have occurred during processing of the request
 	// that the receiver would like to make the sender aware of.
 	// This is distinct from the decision to not accept the connection for whatever business
@@ -188,9 +188,9 @@ type WitnessResponse struct {
 	//
 	// The underlying transport may use this to notify the sender of errors or may use some
 	// other method to inform the sender-side transport layer that it should signal an error.
-	Errors        []string `json:"errors"`
-	Accepted      bool     `json:"accepted"`
-	RejectReasons []string `json:"rejectReasons"`
+	Errors        []string
+	Accepted      bool
+	RejectReasons []string
 }
 
 type WitnessRejectError struct {
@@ -212,7 +212,7 @@ func (e *CloseError) Error() string {
 }
 
 type CloseRequest struct {
-	ConnID ID `json:"connId"`
+	ConnID ID
 }
 
 func NewRandomID() (ID, error) {
@@ -224,6 +224,6 @@ func NewRandomID() (ID, error) {
 }
 
 type WitnessNotification struct {
-	ConnectionID ID      `json:"connectionId"`
-	Witness      peer.ID `json:"witness"`
+	ConnectionID ID
+	Witness      peer.ID
 }
