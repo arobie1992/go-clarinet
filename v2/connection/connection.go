@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type ID = uuid.UUID
+type ID uuid.UUID;
 
 type Connection interface {
 	ID() ID
@@ -218,7 +218,7 @@ type CloseRequest struct {
 func NewRandomID() (ID, error) {
 	uuid, err := uuid.NewRandom()
 	if err != nil {
-		return uuid, err
+		return ID(uuid), err
 	}
 	return ID(uuid), nil
 }

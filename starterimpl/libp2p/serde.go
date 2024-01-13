@@ -85,7 +85,7 @@ func (t *libp2pTransport) deserializeConnectRequest(in []byte, r *connection.Con
 		return err
 	}
 	t.l.Trace("Deserialized witness selector %s", ws)
-	r.ConnID = connID
+	r.ConnID = connection.ID(connID)
 	r.Sender = sender
 	r.Receiver = recvr
 	r.Options = connection.Options{WitnessSelector: ws}
@@ -128,7 +128,7 @@ func (t *libp2pTransport) deserializeConnectResponse(in []byte, r *connection.Co
 		return err
 	}
 	t.l.Trace("Deserialized reasons %v", reasons)
-	r.ConnID = id
+	r.ConnID = connection.ID(id)
 	r.Errors = errs
 	r.Accepted = accepted
 	r.RejectReasons = reasons
@@ -164,7 +164,7 @@ func (t *libp2pTransport) deserializeWitnessRequest(in []byte, r *connection.Wit
 	if err != nil {
 		return err
 	}
-	r.ConnID = connID
+	r.ConnID = connection.ID(connID)
 	r.Sender = sender
 	r.Receiver = recvr
 	r.Options = connection.Options{WitnessSelector: ws}
@@ -197,7 +197,7 @@ func (t *libp2pTransport) deserializeWitnessResponse(in []byte, r *connection.Wi
 	if err != nil {
 		return err
 	}
-	r.ConnID = id
+	r.ConnID = connection.ID(id)
 	r.Errors = errs
 	r.Accepted = accepted
 	r.RejectReasons = reasons
@@ -221,7 +221,7 @@ func (t *libp2pTransport) deserializeWitnessNotification(in []byte, n *connectio
 	if err != nil {
 		return err
 	}
-	n.ConnectionID = connID
+	n.ConnectionID = connection.ID(connID)
 	n.Witness = wit
 	return nil
 }
@@ -239,7 +239,7 @@ func (t *libp2pTransport) deserializeCloseRequest(in []byte, r *connection.Close
 	if err != nil {
 		return err
 	}
-	r.ConnID = id
+	r.ConnID = connection.ID(id)
 	return nil
 }
 

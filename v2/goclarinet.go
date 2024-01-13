@@ -10,7 +10,6 @@ import (
 	"github.com/arobie1992/go-clarinet/v2/peer"
 	"github.com/arobie1992/go-clarinet/v2/reputation"
 	"github.com/arobie1992/go-clarinet/v2/transport"
-	"github.com/google/uuid"
 )
 
 type Node struct {
@@ -145,17 +144,17 @@ func (n *Node) UpdatePeer(peer peer.Peer) error {
 // Connect establishes an outgoing connection to the specified peer and attempts to set up the connection as far as possible.
 func (n *Node) Connect(receiver peer.Peer, connOptions connection.Options, transportOptions transport.Options) (connection.ID, error) {
 	if err := n.UpdatePeer(receiver); err != nil {
-		return uuid.UUID{}, err
+		return connection.ID{}, err
 	}
 
 	self, err := n.peerStore.Self()
 	if err != nil {
-		return uuid.UUID{}, err
+		return connection.ID{}, err
 	}
 
 	connID, err := n.connectionStore.Create(self, receiver, connection.RequestingReceiver())
 	if err != nil {
-		return uuid.UUID{}, err
+		return connection.ID{}, err
 	}
 
 	err = n.connectionStore.Update(connID, func(conn connection.Connection) (connection.Connection, error) {

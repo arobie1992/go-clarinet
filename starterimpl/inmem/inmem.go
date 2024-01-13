@@ -11,7 +11,6 @@ import (
 	"github.com/arobie1992/go-clarinet/v2/log"
 	"github.com/arobie1992/go-clarinet/v2/peer"
 	"github.com/arobie1992/go-clarinet/v2/reputation"
-	"github.com/google/uuid"
 )
 
 type connEntry struct {
@@ -78,7 +77,7 @@ type inMemoryConnectionStore struct {
 }
 
 func NewConnectionStore(logger log.Logger) connection.ConnectionStore {
-	return &inMemoryConnectionStore{sync.RWMutex{}, map[uuid.UUID]*connEntry{}, logger}
+	return &inMemoryConnectionStore{sync.RWMutex{}, map[connection.ID]*connEntry{}, logger}
 }
 
 func (cs *inMemoryConnectionStore) Create(sender, receiver peer.Peer, status connection.Status) (connection.ID, error) {
@@ -112,9 +111,9 @@ func (cs *inMemoryConnectionStore) Accept(id connection.ID, sender peer.Peer, re
 	defer cs.globalLock.Unlock()
 	if existing, ok := cs.conns[id]; ok {
 		cs.l.Debug("Encountered collision for ID %s. Found: %v, New: %v", existing, conn)
-		return fmt.Errorf("Collision occurred while generating ID for new cconnection. ID: %s", id)
+		return fmt.Errorf("A connection already exists for ID: %s", id)
 	}
-	cs.l.Trace("Inserting new connection entry at connection ID %s", id)
+	cs.l.Debug("Inserting new connection entry for connection ID: %s", id)
 	cs.conns[id] = &connEntry{sync.RWMutex{}, &conn}
 	if cs.l.Level().AtLeast(log.Trace()) {
 		found, ok := cs.conns[id]
