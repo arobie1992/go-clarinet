@@ -28,7 +28,7 @@ func TestParseWitnessSelector(t *testing.T) {
 		if test.expectedErr == nil && err == nil {
 			continue
 		}
-		if test.expectedErr != nil && (err == nil || test.expectedErr.Error() != err.Error()) {
+		if err == nil || test.expectedErr.Error() != err.Error() {
 			t.Errorf("Incorrect error returned. Expected: %s, Got: %s", test.expectedErr, err)
 		}
 	}
