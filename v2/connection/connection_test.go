@@ -34,6 +34,21 @@ func TestParseWitnessSelector(t *testing.T) {
 	}
 }
 
+func TestWitnessSelectorString(t *testing.T) {
+	tests := []struct {
+		ws connection.WitnessSelector
+		expected string
+	}{
+		{connection.WitnessSelectorSender(), "Sender"},
+		{connection.WitnessSelectorReceiver(), "Receiver"},
+	}
+	for i, test := range tests {
+		if test.ws.String() != test.expected {
+			t.Errorf("Test %d incorrect string output. Expected: %s, Got: %s", i, test.expected, test.ws.String())
+		}
+	}
+}
+
 func TestConnectRequestError(t *testing.T) {
 	id, err := connection.NewRandomID()
 	if err != nil {
