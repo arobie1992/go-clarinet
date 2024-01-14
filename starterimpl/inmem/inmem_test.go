@@ -14,11 +14,6 @@ import (
 	"github.com/arobie1992/go-clarinet/v2/reputation"
 )
 
-type logEntry struct {
-	level            log.Level
-	formattedMessage string
-}
-
 type noOpLog struct {
 	level log.Level
 }
