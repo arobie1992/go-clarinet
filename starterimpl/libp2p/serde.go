@@ -33,7 +33,7 @@ func (t *libp2pTransport) serialize(input any) ([]byte, error) {
 }
 
 func (t *libp2pTransport) deserialize(in []byte, out any) error {
-	t.l.Trace("Preeparing to deserialize data %s into type %T", in, out)
+	t.l.Trace("Preparing to deserialize data %s into type %T", in, out)
 	switch v := out.(type) {
 	case *connection.ConnectRequest:
 		return t.deserializeConnectRequest(in, v)
@@ -227,7 +227,7 @@ func (t *libp2pTransport) deserializeWitnessNotification(in []byte, n *connectio
 }
 
 func (t *libp2pTransport) serializeCloseRequest(r connection.CloseRequest) ([]byte, error) {
-	return []byte(fmt.Sprintf("%s;", r.ConnID)), nil
+	return []byte(fmt.Sprintf("%s;", r.ConnectionID)), nil
 }
 
 func (t *libp2pTransport) deserializeCloseRequest(in []byte, r *connection.CloseRequest) error {
@@ -239,7 +239,7 @@ func (t *libp2pTransport) deserializeCloseRequest(in []byte, r *connection.Close
 	if err != nil {
 		return err
 	}
-	r.ConnID = connection.ID(id)
+	r.ConnectionID = connection.ID(id)
 	return nil
 }
 
@@ -299,8 +299,8 @@ func (t *libp2pTransport) serializeSlice(plain []string) string {
 
 func (t *libp2pTransport) deserializeSlice(enc string) ([]string, error) {
 	t.l.Trace("Preparing to deserialize slice string '%s'", enc)
-	if !strings.Contains(enc, ",") {
-		t.l.Debug("Encoded slice does not contain any element separators so is empty array")
+	if enc == "" {
+		t.l.Debug("Encoded slice is empty which means an empty array")
 		return []string{}, nil
 	}
 	parts := strings.Split(enc, ",")

@@ -36,7 +36,7 @@ func streamCleanupWrapper(l log.Logger, handler func(s network.Stream) error) fu
 		if err != nil {
 			l.Error("Resetting stream %s from %s due to error: %s", s.ID(), p, err)
 			if err := s.Reset(); err != nil {
-				l.Error("Failed to reset stream  %s from %s: %s", s.ID(), p, err)
+				l.Error("Failed to reset stream %s from %s: %s", s.ID(), p, err)
 			}
 		} else {
 			if err := s.Close(); err != nil {
@@ -126,8 +126,6 @@ func (t *libp2pTransport) RegisterHandlers(
 	witnessNotificationHandler transport.WitnessNotificationHandler,
 	closeHandler transport.CloseHandler,
 ) error {
-	// TODO is it worth seeing about handling the errors and allowing them to respond or should the errors only support the part of the logic that
-	// the user provides?
 	adaptedConnectHandler := readWriteWrapper(t, connection.ConnectRequest{}, connectHandler, true)
 	t.host.SetStreamHandler("/connect", streamCleanupWrapper(t.l, adaptedConnectHandler))
 
@@ -153,7 +151,9 @@ func (t *libp2pTransport) RegisterHandlers(
 func (t *libp2pTransport) Send(peer peer.Peer, options transport.Options, data any) error {
 	s, err := t.sendInternal(peer, options, data)
 	if err != nil {
-		s.Reset()
+		if s != nil {
+			s.Reset()
+		}
 		return err
 	}
 	s.Close()
@@ -188,7 +188,7 @@ func (t *libp2pTransport) Exchange(peer peer.Peer, options transport.Options, da
 	s.Close()
 
 	if err := t.deserialize(recv, response); err != nil {
-		return len(recv), fmt.Errorf("Failed to decode response. Most recent error: %s", err)
+		return len(recv), fmt.Errorf("Failed to decode response: %s", err)
 	}
 
 	return len(recv), nil
@@ -207,11 +207,12 @@ func (t *libp2pTransport) sendInternal(peer peer.Peer, options transport.Options
 		protocolId = protocol.ID("/witness-notification")
 	default:
 		return nil, fmt.Errorf(
-			"Unsupported data type: %T. Supported types are: [%T, %T, %T]",
+			"Unsupported data type: %T. Supported types are: [%T, %T, %T, %T]",
 			data,
 			connection.ConnectRequest{},
 			connection.WitnessRequest{},
 			connection.CloseRequest{},
+			connection.WitnessNotification{},
 		)
 	}
 	t.l.Debug("Protocol ID: %s", protocolId)
@@ -221,16 +222,11 @@ func (t *libp2pTransport) sendInternal(peer peer.Peer, options transport.Options
 		return s, err
 	}
 
-	now := time.Now()
-	if options.Timeout != nil {
-		s.SetDeadline(now.Add(*options.Timeout))
-	}
-
 	writeTimeout := 10 * time.Second
 	if options.WriteTimeout != nil {
 		writeTimeout = *options.WriteTimeout
 	}
-	s.SetWriteDeadline(now.Add(writeTimeout))
+	s.SetWriteDeadline(time.Now().Add(writeTimeout))
 
 	enc, err := t.serialize(data)
 	if err != nil {
@@ -286,11 +282,22 @@ func (ps *libp2pPeerStore) AddAddr(id peer.ID, addr peer.Address) error {
 }
 
 func (ps *libp2pPeerStore) Find(id peer.ID) (peer.Peer, error) {
-	addrs := []peer.Address{}
-	for _, addr := range ps.host.Addrs() {
-		addrs = append(addrs, peer.Address(addr.String()))
+	p := lp2pPeer{id, []peer.Address{}}
+	if id == ps.selfId {
+		for _, addr := range ps.host.Addrs() {
+			p.addresses = append(p.addresses, peer.Address(addr.String()))
+		}
+	} else {
+		libp2pID, err := libp2pPeer.Decode(id.String())
+		if err != nil {
+			return nil, err
+		}
+
+		for _, addr := range ps.host.Peerstore().Addrs(libp2pID) {
+			p.addresses = append(p.addresses, peer.Address(addr.String()))
+		}
 	}
-	return &lp2pPeer{id, addrs}, nil
+	return &p, nil
 }
 
 func (ps *libp2pPeerStore) All() ([]peer.Peer, error) {
@@ -298,13 +305,11 @@ func (ps *libp2pPeerStore) All() ([]peer.Peer, error) {
 	peers := []peer.Peer{}
 	for _, libp2pID := range ps.host.Peerstore().Peers() {
 		ps.log.Trace("Found peer %s", libp2pID)
-		p := lp2pPeer{peer.ID(libp2pID), []peer.Address{}}
-		ps.log.Trace("Created peer {%s %v}", p.id, p.addresses)
-		peers = append(peers, &p)
-		for _, addr := range ps.host.Peerstore().Addrs(libp2pID) {
-			ps.log.Trace("Found address %s for peer %s", addr, p.id)
-			p.addresses = append(p.addresses, peer.Address(addr.String()))
+		peer, err := ps.Find(libp2pID)
+		if err != nil {
+			return peers, err
 		}
+		peers = append(peers, peer)
 	}
 	ps.log.Trace("Compiled list of all peers: %v", peers)
 	return peers, nil

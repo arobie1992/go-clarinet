@@ -379,7 +379,7 @@ func (n *Node) CloseConnection(connID connection.ID, transportOptions transport.
 }
 
 func (n *Node) requestClose(peer peer.Peer, conn connection.Connection, options transport.Options) error {
-	closeRequest := connection.CloseRequest{ConnID: conn.ID()}
+	closeRequest := connection.CloseRequest{ConnectionID: conn.ID()}
 	return n.transport.Send(peer, options, closeRequest)
 }
 
@@ -628,7 +628,7 @@ type closeHandlerAdapter struct {
 }
 
 func (h *closeHandlerAdapter) Handle(peerID peer.ID, request connection.CloseRequest) error {
-	return h.node.connectionStore.Update(request.ConnID, func(conn connection.Connection) (connection.Connection, error) {
+	return h.node.connectionStore.Update(request.ConnectionID, func(conn connection.Connection) (connection.Connection, error) {
 		if conn.Status() == connection.Closed() {
 			return nil, nil
 		}

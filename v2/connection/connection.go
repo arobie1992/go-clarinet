@@ -9,6 +9,10 @@ import (
 
 type ID uuid.UUID
 
+func (id ID) String() string {
+	return uuid.UUID(id).String()
+}
+
 type Connection interface {
 	ID() ID
 	Sender() peer.ID
@@ -212,7 +216,7 @@ func (e *CloseError) Error() string {
 }
 
 type CloseRequest struct {
-	ConnID ID
+	ConnectionID ID
 }
 
 func NewRandomID() (ID, error) {
