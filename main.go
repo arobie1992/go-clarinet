@@ -224,7 +224,7 @@ type connectHandler struct {
 
 func (h *connectHandler) Handle(peerID peer.ID, request connection.ConnectRequest) (connection.ConnectResponse, error) {
 	return connection.ConnectResponse{
-		ConnID:        request.ConnID,
+		ConnectionID:  request.ConnID,
 		Errors:        []string{},
 		Accepted:      true,
 		RejectReasons: []string{},
@@ -241,7 +241,7 @@ type witnessHandler struct {
 
 func (h *witnessHandler) Handle(peerID peer.ID, request connection.WitnessRequest) (connection.WitnessResponse, error) {
 	return connection.WitnessResponse{
-		ConnID:        request.ConnID,
+		ConnectionID:  request.ConnID,
 		Errors:        []string{},
 		Accepted:      true,
 		RejectReasons: []string{},

@@ -94,7 +94,7 @@ func (t *libp2pTransport) deserializeConnectRequest(in []byte, r *connection.Con
 }
 
 func (t *libp2pTransport) serializeConnectResponse(r connection.ConnectResponse) ([]byte, error) {
-	s := fmt.Sprintf("%s.%s.%t.%s;", r.ConnID, t.serializeSlice(r.Errors), r.Accepted, t.serializeSlice(r.RejectReasons))
+	s := fmt.Sprintf("%s.%s.%t.%s;", r.ConnectionID, t.serializeSlice(r.Errors), r.Accepted, t.serializeSlice(r.RejectReasons))
 	return []byte(s), nil
 }
 
@@ -128,7 +128,7 @@ func (t *libp2pTransport) deserializeConnectResponse(in []byte, r *connection.Co
 		return err
 	}
 	t.l.Trace("Deserialized reasons %v", reasons)
-	r.ConnID = connection.ID(id)
+	r.ConnectionID = connection.ID(id)
 	r.Errors = errs
 	r.Accepted = accepted
 	r.RejectReasons = reasons
@@ -172,7 +172,7 @@ func (t *libp2pTransport) deserializeWitnessRequest(in []byte, r *connection.Wit
 }
 
 func (t *libp2pTransport) serializeWitnessResponse(r connection.WitnessResponse) ([]byte, error) {
-	s := fmt.Sprintf("%s.%s.%t.%s;", r.ConnID, t.serializeSlice(r.Errors), r.Accepted, t.serializeSlice(r.RejectReasons))
+	s := fmt.Sprintf("%s.%s.%t.%s;", r.ConnectionID, t.serializeSlice(r.Errors), r.Accepted, t.serializeSlice(r.RejectReasons))
 	return []byte(s), nil
 }
 
@@ -197,7 +197,7 @@ func (t *libp2pTransport) deserializeWitnessResponse(in []byte, r *connection.Wi
 	if err != nil {
 		return err
 	}
-	r.ConnID = connection.ID(id)
+	r.ConnectionID = connection.ID(id)
 	r.Errors = errs
 	r.Accepted = accepted
 	r.RejectReasons = reasons

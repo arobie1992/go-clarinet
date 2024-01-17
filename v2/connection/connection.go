@@ -148,7 +148,7 @@ type ConnectRequest struct {
 }
 
 type ConnectResponse struct {
-	ConnID ID
+	ConnectionID ID
 	// Errors represent any errors that may have occurred during processing of the request
 	// that the receiver would like to make the sender aware of.
 	// This is distinct from the decision to not accept the connection for whatever business
@@ -181,7 +181,7 @@ type WitnessRequest struct {
 }
 
 type WitnessResponse struct {
-	ConnID ID
+	ConnectionID ID
 	// Errors represent any errors that may have occurred during processing of the request
 	// that the receiver would like to make the sender aware of.
 	// This is distinct from the decision to not accept the connection for whatever business

@@ -161,13 +161,13 @@ func TestTransportExchange(t *testing.T) {
 
 	ctx.receiverTx.RegisterHandlers(
 		&testConnectHandler{connection.ConnectResponse{
-			ConnID:        connID,
+			ConnectionID:  connID,
 			Errors:        []string{"test connect error resp"},
 			Accepted:      true,
 			RejectReasons: []string{"test connect reject reason"},
 		}, nil, transport.Options{}},
 		&testWitnessHandler{connection.WitnessResponse{
-			ConnID:        connID,
+			ConnectionID:  connID,
 			Errors:        []string{"test witness error resp"},
 			Accepted:      true,
 			RejectReasons: []string{"test witness reject reason"},
@@ -191,8 +191,8 @@ func TestTransportExchange(t *testing.T) {
 			&connection.ConnectResponse{},
 			// test all the fields at once
 			&connection.ConnectResponse{
-				ConnID: connID,
-				Errors: []string{"test connect error resp"},
+				ConnectionID: connID,
+				Errors:       []string{"test connect error resp"},
 				// use true because booleans should default to false
 				Accepted:      true,
 				RejectReasons: []string{"test connect reject reason"},
@@ -208,8 +208,8 @@ func TestTransportExchange(t *testing.T) {
 			&connection.WitnessResponse{},
 			// test all the fields at once
 			&connection.WitnessResponse{
-				ConnID: connID,
-				Errors: []string{"test witness error resp"},
+				ConnectionID: connID,
+				Errors:       []string{"test witness error resp"},
 				// use true because booleans should default to false
 				Accepted:      true,
 				RejectReasons: []string{"test witness reject reason"},
@@ -513,7 +513,6 @@ func TestPeerStoreAddAddrAll(t *testing.T) {
 
 	ctx.peerstore.AddAddr(p.ID(), peer.Address(p.Addrs()[0].String()))
 
-	
 	expectedSelf := libp2p.NewPeer(ctx.host.ID(), []peer.Address{peer.Address(ctx.host.Addrs()[0].String())})
 	expectedP := libp2p.NewPeer(p.ID(), []peer.Address{peer.Address(p.Addrs()[0].String())})
 
