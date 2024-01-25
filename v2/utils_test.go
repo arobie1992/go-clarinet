@@ -332,7 +332,6 @@ func (tx *testTransport) RegisterHandlers(
 	return nil
 }
 
-// Send implements transport.Transport.
 func (tx *testTransport) Send(peer peer.Peer, options transport.Options, data any) error {
 	for _, sa := range tx.sendActions {
 		match, err := sa(peer, options, data)
@@ -343,13 +342,15 @@ func (tx *testTransport) Send(peer peer.Peer, options transport.Options, data an
 	return fmt.Errorf("No action for given send input: %v, %v, %s", peer, options, data)
 }
 
+type connectHandlerResp struct {
+	peerID  peer.ID
+	request connection.ConnectRequest
+	resp    connection.ConnectResponse
+	err     error
+}
+
 type testConnectHandler struct {
-	resps []struct {
-		peerID  peer.ID
-		request connection.ConnectRequest
-		resp    connection.ConnectResponse
-		err     error
-	}
+	resps []connectHandlerResp
 }
 
 func (h *testConnectHandler) Handle(peerID peer.ID, request connection.ConnectRequest) (connection.ConnectResponse, error) {
@@ -365,13 +366,15 @@ func (h *testConnectHandler) Options() transport.Options {
 	return transport.Options{}
 }
 
+type witnessHandlerResp struct {
+	peerID  peer.ID
+	request connection.WitnessRequest
+	resp    connection.WitnessResponse
+	err     error
+}
+
 type testWitnessHandler struct {
-	resps []struct {
-		peerID  peer.ID
-		request connection.WitnessRequest
-		resp    connection.WitnessResponse
-		err     error
-	}
+	resps []witnessHandlerResp
 }
 
 func (h *testWitnessHandler) Handle(peerID peer.ID, request connection.WitnessRequest) (connection.WitnessResponse, error) {
@@ -387,12 +390,14 @@ func (h *testWitnessHandler) Options() transport.Options {
 	return transport.Options{}
 }
 
+type witnessNotificationHandlerResp struct {
+	peerID  peer.ID
+	request connection.WitnessNotification
+	err     error
+}
+
 type testWitnessNotificationHandler struct {
-	resps []struct {
-		peerID  peer.ID
-		request connection.WitnessNotification
-		err     error
-	}
+	resps []witnessNotificationHandlerResp
 }
 
 func (h *testWitnessNotificationHandler) Handle(peerID peer.ID, request connection.WitnessNotification) error {
@@ -408,12 +413,14 @@ func (h *testWitnessNotificationHandler) Options() transport.Options {
 	return transport.Options{}
 }
 
+type closeHandlerResp struct {
+	peerID  peer.ID
+	request connection.CloseRequest
+	err     error
+}
+
 type testCloseHandler struct {
-	resps []struct {
-		peerID  peer.ID
-		request connection.CloseRequest
-		err     error
-	}
+	resps []closeHandlerResp
 }
 
 func (h *testCloseHandler) Handle(peerID peer.ID, request connection.CloseRequest) error {
