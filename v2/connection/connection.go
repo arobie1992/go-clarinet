@@ -7,7 +7,11 @@ import (
 	"github.com/google/uuid"
 )
 
-type ID = uuid.UUID
+type ID uuid.UUID
+
+func (id ID) String() string {
+	return uuid.UUID(id).String()
+}
 
 type Connection interface {
 	ID() ID
@@ -31,6 +35,7 @@ type Connection interface {
 
 type Status interface {
 	connectionStatus()
+	String() string
 }
 
 type requestingReceiver struct{}
@@ -42,23 +47,23 @@ type open struct{}
 type closing struct{}
 type closed struct{}
 
-func (_ *requestingReceiver) connectionStatus() {}
-func (_ *requestingSender) connectionStatus()   {}
-func (_ *awaitingWitness) connectionStatus()    {}
-func (_ *requestingWitness) connectionStatus()  {}
-func (_ *notifyingOfWitness) connectionStatus() {}
-func (_ *open) connectionStatus()               {}
-func (_ *closing) connectionStatus()            {}
-func (_ *closed) connectionStatus()             {}
+func (*requestingReceiver) connectionStatus() {}
+func (*requestingSender) connectionStatus()   {}
+func (*awaitingWitness) connectionStatus()    {}
+func (*requestingWitness) connectionStatus()  {}
+func (*notifyingOfWitness) connectionStatus() {}
+func (*open) connectionStatus()               {}
+func (*closing) connectionStatus()            {}
+func (*closed) connectionStatus()             {}
 
-func (_ *requestingReceiver) String() string { return "RequestingReceiver" }
-func (_ *requestingSender) String() string   { return "RequestingSender" }
-func (_ *requestingWitness) String() string  { return "RequestingWitness" }
-func (_ *awaitingWitness) String() string    { return "AwaitingWitness" }
-func (_ *notifyingOfWitness) String() string { return "NotifyingOfWitness" }
-func (_ *open) String() string               { return "Open" }
-func (_ *closing) String() string            { return "Closing" }
-func (_ *closed) String() string             { return "Closed" }
+func (*requestingReceiver) String() string { return "RequestingReceiver" }
+func (*requestingSender) String() string   { return "RequestingSender" }
+func (*requestingWitness) String() string  { return "RequestingWitness" }
+func (*awaitingWitness) String() string    { return "AwaitingWitness" }
+func (*notifyingOfWitness) String() string { return "NotifyingOfWitness" }
+func (*open) String() string               { return "Open" }
+func (*closing) String() string            { return "Closing" }
+func (*closed) String() string             { return "Closed" }
 
 var rr Status = &requestingReceiver{}
 var rs Status = &requestingSender{}
@@ -97,25 +102,26 @@ type ConnectionStore interface {
 	Read(id ID, readFunc func(conn Connection) error) error
 	Create(sender, receiver peer.Peer, status Status) (ID, error)
 	Accept(id ID, sender, receiver peer.Peer, status Status) error
+	All() ([]ID, error)
 }
 
 type Options struct {
-	WitnessSelector   WitnessSelector `json:"witnessSelector"`
-	AdditionalOptions map[string]any  `json:"additionalOptions"`
+	WitnessSelector WitnessSelector
 }
 
 type WitnessSelector interface {
 	witnessSelector()
+	String() string
 }
 
 type senderSelects struct{}
 type receiverSelects struct{}
 
-func (_ *senderSelects) witnessSelector()   {}
-func (_ *receiverSelects) witnessSelector() {}
+func (*senderSelects) witnessSelector()   {}
+func (*receiverSelects) witnessSelector() {}
 
-func (_ *senderSelects) String() string   { return "Sender" }
-func (_ *receiverSelects) String() string { return "Receiver" }
+func (*senderSelects) String() string   { return "Sender" }
+func (*receiverSelects) String() string { return "Receiver" }
 
 var sendSelect WitnessSelector = &senderSelects{}
 var recvSelect WitnessSelector = &receiverSelects{}
@@ -123,15 +129,26 @@ var recvSelect WitnessSelector = &receiverSelects{}
 func WitnessSelectorSender() WitnessSelector   { return sendSelect }
 func WitnessSelectorReceiver() WitnessSelector { return recvSelect }
 
+func ParseWitnessSelector(s string) (WitnessSelector, error) {
+	switch s {
+	case sendSelect.String():
+		return sendSelect, nil
+	case recvSelect.String():
+		return recvSelect, nil
+	default:
+		return nil, fmt.Errorf("Unrecognized witness selector type: %s", s)
+	}
+}
+
 type ConnectRequest struct {
-	ConnID   ID      `json:"connId"`
-	Sender   peer.ID `json:"sender"`
-	Receiver peer.ID `json:"receiver"`
-	Options  Options `json:"options"`
+	ConnectionID ID
+	Sender       peer.ID
+	Receiver     peer.ID
+	Options      Options
 }
 
 type ConnectResponse struct {
-	ConnID ID `json:"connId"`
+	ConnectionID ID
 	// Errors represent any errors that may have occurred during processing of the request
 	// that the receiver would like to make the sender aware of.
 	// This is distinct from the decision to not accept the connection for whatever business
@@ -142,29 +159,29 @@ type ConnectResponse struct {
 	//
 	// The underlying transport may use this to notify the sender of errors or may use some
 	// other method to inform the sender-side transport layer that it should signal an error.
-	Errors        []error  `json:"errors"`
-	Accepted      bool     `json:"accepted"`
-	RejectReasons []string `json:"rejectReasons"`
+	Errors        []string
+	Accepted      bool
+	RejectReasons []string
 }
 
 type ConnectRejectError struct {
-	ConnID  ID
-	Reasons []string
+	ConnectionID ID
+	Reasons      []string
 }
 
 func (e *ConnectRejectError) Error() string {
-	return fmt.Sprintf("Connection %s connect request was rejected for the following reasons: %v", e.ConnID, e.Reasons)
+	return fmt.Sprintf("Connection %s connect request was rejected for the following reasons: %v", e.ConnectionID, e.Reasons)
 }
 
 type WitnessRequest struct {
-	ConnID   ID      `json:"connId"`
-	Sender   peer.ID `json:"sender"`
-	Receiver peer.ID `json:"receiver"`
-	Options  Options `json:"options"`
+	ConnectionID ID
+	Sender       peer.ID
+	Receiver     peer.ID
+	Options      Options
 }
 
 type WitnessResponse struct {
-	ConnID ID `json:"connId"`
+	ConnectionID ID
 	// Errors represent any errors that may have occurred during processing of the request
 	// that the receiver would like to make the sender aware of.
 	// This is distinct from the decision to not accept the connection for whatever business
@@ -175,42 +192,42 @@ type WitnessResponse struct {
 	//
 	// The underlying transport may use this to notify the sender of errors or may use some
 	// other method to inform the sender-side transport layer that it should signal an error.
-	Errors        []error  `json:"errors"`
-	Accepted      bool     `json:"accepted"`
-	RejectReasons []string `json:"rejectReasons"`
+	Errors        []string
+	Accepted      bool
+	RejectReasons []string
 }
 
 type WitnessRejectError struct {
-	ConnID  ID
-	Reasons []string
+	ConnectionID ID
+	Reasons      []string
 }
 
 func (e *WitnessRejectError) Error() string {
-	return fmt.Sprintf("Connection %s witness request was rejected for the following reasons: %v", e.ConnID, e.Reasons)
+	return fmt.Sprintf("Connection %s witness request was rejected for the following reasons: %v", e.ConnectionID, e.Reasons)
 }
 
 type CloseError struct {
-	ConnID ID
-	Errors []error
+	ConnectionID ID
+	Errors       []error
 }
 
 func (e *CloseError) Error() string {
-	return fmt.Sprintf("Errors encountered while closing connectin %s: %v", e.ConnID, e.Errors)
+	return fmt.Sprintf("Errors encountered while closing connectin %s: %v", e.ConnectionID, e.Errors)
 }
 
 type CloseRequest struct {
-	ConnID ID `json:"connId"`
+	ConnectionID ID
 }
 
 func NewRandomID() (ID, error) {
 	uuid, err := uuid.NewRandom()
 	if err != nil {
-		return uuid, err
+		return ID(uuid), err
 	}
 	return ID(uuid), nil
 }
 
 type WitnessNotification struct {
-	ConnectionID ID      `json:"connectionId"`
-	Witness      peer.ID `json:"witness"`
+	ConnectionID ID
+	Witness      peer.ID
 }

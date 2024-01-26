@@ -3,13 +3,13 @@ package libp2p
 import (
 	"bufio"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/arobie1992/go-clarinet/v2/connection"
+	"github.com/arobie1992/go-clarinet/v2/log"
 	"github.com/arobie1992/go-clarinet/v2/peer"
 	"github.com/arobie1992/go-clarinet/v2/transport"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -22,38 +22,50 @@ import (
 
 type libp2pTransport struct {
 	host host.Host
+	l    log.Logger
 }
 
-func NewTransport(host host.Host) transport.Transport {
-	return &libp2pTransport{host}
+func NewTransport(host host.Host, logger log.Logger) transport.Transport {
+	return &libp2pTransport{host, logger}
 }
 
-func streamCleanupWrapper(handler func(s network.Stream) error) func(network.Stream) {
+func streamCleanupWrapper(l log.Logger, handler func(s network.Stream) error) func(network.Stream) {
 	return func(s network.Stream) {
+		p := s.Conn().RemotePeer()
 		err := handler(s)
 		if err != nil {
-			s.Reset()
+			l.Error("Resetting stream %s from %s due to error: %s", s.ID(), p, err)
+			if err := s.Reset(); err != nil {
+				l.Error("Failed to reset stream %s from %s: %s", s.ID(), p, err)
+			}
 		} else {
-			s.Close()
+			if err := s.Close(); err != nil {
+				if strings.Contains(err.Error(), "close called for canceled stream") {
+					l.Debug("Should be non-problematic close error: %s", err)
+					return
+				}
+				l.Error("Failed to close stream %s from %s: %s", s.ID(), p, err)
+			}
 		}
 	}
 }
 
 type handlerAdapter[I any] struct {
-	closeHandler transport.SendHandler[I]
+	h transport.SendHandler[I]
 }
 
 func (h *handlerAdapter[I]) Handle(peerID peer.ID, req I) (any, error) {
-	return nil, h.closeHandler.Handle(peerID, req)
+	return nil, h.h.Handle(peerID, req)
 }
 
 func (h *handlerAdapter[I]) Options() transport.Options {
-	return h.closeHandler.Options()
+	return h.h.Options()
 }
 
-func readWriteWrapper[I, O any](req I, handler transport.ExchangeHandler[I, O]) func(network.Stream) error {
+func readWriteWrapper[I, O any](t *libp2pTransport, req I, handler transport.ExchangeHandler[I, O], hasResp bool) func(network.Stream) error {
 	return func(s network.Stream) error {
 		options := handler.Options()
+		t.l.Debug("Timeout: %s", options.Timeout)
 		if options.Timeout != nil {
 			s.SetDeadline(time.Now().Add(*options.Timeout))
 		}
@@ -62,6 +74,7 @@ func readWriteWrapper[I, O any](req I, handler transport.ExchangeHandler[I, O]) 
 		if options.ReadTimeout != nil {
 			readTimeout = *options.ReadTimeout
 		}
+		t.l.Debug("ReadTimeout: %s", readTimeout)
 		s.SetReadDeadline(time.Now().Add(readTimeout))
 
 		buf := bufio.NewReader(s)
@@ -69,17 +82,23 @@ func readWriteWrapper[I, O any](req I, handler transport.ExchangeHandler[I, O]) 
 		if err != nil {
 			return err
 		}
+		t.l.Trace("Read raw data: %s", raw)
 
-		if err := base64JSONDeserialize(raw, &req); err != nil {
+		if err := t.deserialize(raw, &req); err != nil {
 			return err
 		}
+		t.l.Trace("Successfully deserialized raw data.")
 
 		resp, err := handler.Handle(peer.ID(s.Conn().RemotePeer()), req)
 		if err != nil {
 			return err
 		}
+		if !hasResp {
+			return nil
+		}
+		t.l.Debug("Response from handler: %v", resp)
 
-		enc, err := base64JSONSerialize(resp)
+		enc, err := t.serialize(resp)
 		if err != nil {
 			return err
 		}
@@ -107,22 +126,22 @@ func (t *libp2pTransport) RegisterHandlers(
 	witnessNotificationHandler transport.WitnessNotificationHandler,
 	closeHandler transport.CloseHandler,
 ) error {
-	// TODO is it worth seeing about handling the errors and allowing them to respond or should the errors only support the part of the logic that
-	// the user provides?
-	adaptedConnectHandler := readWriteWrapper(connection.ConnectRequest{}, connectHandler)
-	t.host.SetStreamHandler("/connect", streamCleanupWrapper(adaptedConnectHandler))
+	adaptedConnectHandler := readWriteWrapper(t, connection.ConnectRequest{}, connectHandler, true)
+	t.host.SetStreamHandler("/connect", streamCleanupWrapper(t.l, adaptedConnectHandler))
 
-	adaptedWitnessHandler := readWriteWrapper(connection.WitnessRequest{}, witnessHandler)
-	t.host.SetStreamHandler("/witness", streamCleanupWrapper(adaptedWitnessHandler))
+	adaptedWitnessHandler := readWriteWrapper(t, connection.WitnessRequest{}, witnessHandler, true)
+	t.host.SetStreamHandler("/witness", streamCleanupWrapper(t.l, adaptedWitnessHandler))
 
 	adaptedWitnessNotificationHandler := readWriteWrapper(
+		t,
 		connection.WitnessNotification{},
 		&handlerAdapter[connection.WitnessNotification]{witnessNotificationHandler},
+		false,
 	)
-	t.host.SetStreamHandler("/witness-notification", streamCleanupWrapper(adaptedWitnessNotificationHandler))
+	t.host.SetStreamHandler("/witness-notification", streamCleanupWrapper(t.l, adaptedWitnessNotificationHandler))
 
-	adaptedCloseHandler := readWriteWrapper(connection.CloseRequest{}, &handlerAdapter[connection.CloseRequest]{closeHandler})
-	t.host.SetStreamHandler("/close", streamCleanupWrapper(adaptedCloseHandler))
+	adaptedCloseHandler := readWriteWrapper(t, connection.CloseRequest{}, &handlerAdapter[connection.CloseRequest]{closeHandler}, false)
+	t.host.SetStreamHandler("/close", streamCleanupWrapper(t.l, adaptedCloseHandler))
 	return nil
 }
 
@@ -132,7 +151,9 @@ func (t *libp2pTransport) RegisterHandlers(
 func (t *libp2pTransport) Send(peer peer.Peer, options transport.Options, data any) error {
 	s, err := t.sendInternal(peer, options, data)
 	if err != nil {
-		s.Reset()
+		if s != nil {
+			s.Reset()
+		}
 		return err
 	}
 	s.Close()
@@ -144,9 +165,12 @@ func (t *libp2pTransport) Send(peer peer.Peer, options transport.Options, data a
 //
 // This operation uses options.Timeout as the timeout for opening the underlying libp2p network.Stream.
 func (t *libp2pTransport) Exchange(peer peer.Peer, options transport.Options, data any, response any) (int, error) {
+	t.l.Debug("Preparing to exchange data with peer %s", peer.ID())
 	s, err := t.sendInternal(peer, options, data)
 	if err != nil {
-		s.Reset()
+		if s != nil {
+			s.Reset()
+		}
 		return 0, err
 	}
 
@@ -163,8 +187,8 @@ func (t *libp2pTransport) Exchange(peer peer.Peer, options transport.Options, da
 	}
 	s.Close()
 
-	if err := base64JSONDeserialize(recv, response); err != nil {
-		return len(recv), fmt.Errorf("Failed to decode response. Most recent error: %s", err)
+	if err := t.deserialize(recv, response); err != nil {
+		return len(recv), fmt.Errorf("Failed to decode response: %s", err)
 	}
 
 	return len(recv), nil
@@ -183,31 +207,28 @@ func (t *libp2pTransport) sendInternal(peer peer.Peer, options transport.Options
 		protocolId = protocol.ID("/witness-notification")
 	default:
 		return nil, fmt.Errorf(
-			"Unsupported data type: %T. Supported types are: [%T, %T, %T]",
+			"Unsupported data type: %T. Supported types are: [%T, %T, %T, %T]",
 			data,
 			connection.ConnectRequest{},
 			connection.WitnessRequest{},
 			connection.CloseRequest{},
+			connection.WitnessNotification{},
 		)
 	}
+	t.l.Debug("Protocol ID: %s", protocolId)
 
 	s, err := t.openStream(peer, protocolId, options)
 	if err != nil {
 		return s, err
 	}
 
-	now := time.Now()
-	if options.Timeout != nil {
-		s.SetDeadline(now.Add(*options.Timeout))
-	}
-
 	writeTimeout := 10 * time.Second
 	if options.WriteTimeout != nil {
 		writeTimeout = *options.WriteTimeout
 	}
-	s.SetWriteDeadline(now.Add(writeTimeout))
+	s.SetWriteDeadline(time.Now().Add(writeTimeout))
 
-	enc, err := base64JSONSerialize(data)
+	enc, err := t.serialize(data)
 	if err != nil {
 		return s, fmt.Errorf("Failed to encode data: %s", err)
 	}
@@ -218,41 +239,18 @@ func (t *libp2pTransport) sendInternal(peer peer.Peer, options transport.Options
 	return s, nil
 }
 
-func base64JSONSerialize(value any) ([]byte, error) {
-	jsonData, err := json.Marshal(value)
-	if err != nil {
-		return []byte{}, err
-	}
-	data := base64.RawStdEncoding.EncodeToString(jsonData)
-	enc := fmt.Sprintf("%s;", data)
-	return []byte(enc), nil
-}
-
-func base64JSONDeserialize(data []byte, dest any) error {
-	str := string(data)
-	if str[len(str)-1] == ';' {
-		str = str[:len(str)-1]
-	}
-
-	decoded, err := base64.RawStdEncoding.DecodeString(str)
-	if err != nil {
-		return err
-	}
-
-	if err := json.Unmarshal(decoded, dest); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (t *libp2pTransport) openStream(peer peer.Peer, protocolId protocol.ID, options transport.Options) (network.Stream, error) {
 	timeout := 10 * time.Second
 	if options.Timeout != nil {
 		timeout = *options.Timeout
 	}
 
+	id, err := libp2pPeer.Decode(peer.ID().String())
+	if err != nil {
+		return nil, err
+	}
 	ctx, cf := context.WithTimeout(context.Background(), timeout)
-	s, err := t.host.NewStream(ctx, libp2pPeer.ID(peer.ID().String()), protocolId)
+	s, err := t.host.NewStream(ctx, id, protocolId)
 	cf()
 	return s, err
 }
@@ -260,38 +258,60 @@ func (t *libp2pTransport) openStream(peer peer.Peer, protocolId protocol.ID, opt
 type libp2pPeerStore struct {
 	selfId peer.ID
 	host   host.Host
+	log    log.Logger
 }
 
-func NewPeerStore(host host.Host) peer.PeerStore {
-	return &libp2pPeerStore{peer.ID(host.ID()), host}
+func NewPeerStore(host host.Host, log log.Logger) peer.PeerStore {
+	return &libp2pPeerStore{peer.ID(host.ID()), host, log}
 }
 
 func (ps *libp2pPeerStore) AddAddr(id peer.ID, addr peer.Address) error {
+	ps.log.Trace("Will add address %s for peer %s", addr, id)
 	maddr, err := multiaddr.NewMultiaddr(string(addr))
 	if err != nil {
 		return err
 	}
-	ps.host.Peerstore().AddAddr(libp2pPeer.ID(id.String()), maddr, peerstore.PermanentAddrTTL)
+	ps.log.Trace("Parsed addr %s into multiaddr %s", addr, maddr)
+	libp2pID, err := libp2pPeer.Decode(id.String())
+	if err != nil {
+		return err
+	}
+	ps.log.Trace("Parsed peer ID %s into libp2p peer ID %s", id, libp2pID)
+	ps.host.Peerstore().AddAddr(libp2pID, maddr, peerstore.PermanentAddrTTL)
 	return nil
 }
 
 func (ps *libp2pPeerStore) Find(id peer.ID) (peer.Peer, error) {
-	addrs := []peer.Address{}
-	for _, addr := range ps.host.Addrs() {
-		addrs = append(addrs, peer.Address(addr.String()))
-	}
-	return &lp2pPeer{id, addrs}, nil
-}
-
-func (ps *libp2pPeerStore) All() ([]peer.Peer, error) {
-	peers := []peer.Peer{}
-	for _, libp2pID := range ps.host.Peerstore().Peers() {
-		p := lp2pPeer{peer.ID(libp2pID), []peer.Address{}}
-		peers = append(peers, &p)
+	p := lp2pPeer{id, []peer.Address{}}
+	if id == ps.selfId {
 		for _, addr := range ps.host.Addrs() {
 			p.addresses = append(p.addresses, peer.Address(addr.String()))
 		}
+	} else {
+		libp2pID, err := libp2pPeer.Decode(id.String())
+		if err != nil {
+			return nil, err
+		}
+
+		for _, addr := range ps.host.Peerstore().Addrs(libp2pID) {
+			p.addresses = append(p.addresses, peer.Address(addr.String()))
+		}
 	}
+	return &p, nil
+}
+
+func (ps *libp2pPeerStore) All() ([]peer.Peer, error) {
+	ps.log.Trace("Entering libp2pPeerStore All method")
+	peers := []peer.Peer{}
+	for _, libp2pID := range ps.host.Peerstore().Peers() {
+		ps.log.Trace("Found peer %s", libp2pID)
+		peer, err := ps.Find(libp2pID)
+		if err != nil {
+			return peers, err
+		}
+		peers = append(peers, peer)
+	}
+	ps.log.Trace("Compiled list of all peers: %v", peers)
 	return peers, nil
 }
 
@@ -302,6 +322,14 @@ func (ps *libp2pPeerStore) Self() (peer.Peer, error) {
 type lp2pPeer struct {
 	id        peer.ID
 	addresses []peer.Address
+}
+
+func ParsePeerID(id string) (peer.ID, error) {
+	return libp2pPeer.Decode(id)
+}
+
+func NewPeer(id peer.ID, addresses []peer.Address) peer.Peer {
+	return &lp2pPeer{id, addresses}
 }
 
 func (p *lp2pPeer) ID() peer.ID {

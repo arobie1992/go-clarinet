@@ -1,17 +1,24 @@
 package log
 
+import (
+	"fmt"
+	"strings"
+)
+
 type Logger interface {
 	Trace(fmtMsg string, values ...any)
 	Debug(fmtMsg string, values ...any)
 	Info(fmtMsg string, values ...any)
 	Warn(fmtMsg string, values ...any)
 	Error(fmtMsg string, values ...any)
+	Level() Level
 }
 
 type Level interface {
 	logLevel()
 	value() int
 	AtLeast(level Level) bool
+	String() string
 }
 
 type traceLevel struct{ val int }
@@ -38,10 +45,10 @@ func (t *traceLevel) AtLeast(level Level) bool {
 func (d *debugLevel) AtLeast(level Level) bool {
 	return d.value() >= level.value()
 }
-func (i *infoLevel) AtLeast(level Level) bool  {
+func (i *infoLevel) AtLeast(level Level) bool {
 	return i.value() >= level.value()
 }
-func (w *warnLevel) AtLeast(level Level) bool  {
+func (w *warnLevel) AtLeast(level Level) bool {
 	return w.value() >= level.value()
 }
 func (e *errorLevel) AtLeast(level Level) bool {
@@ -59,9 +66,27 @@ var dl Level = &debugLevel{4}
 var il Level = &infoLevel{3}
 var wl Level = &warnLevel{2}
 var el Level = &errorLevel{1}
+var levels = []string{tl.String(), dl.String(), il.String(), wl.String(), el.String()}
 
 func Trace() Level { return tl }
 func Debug() Level { return dl }
 func Info() Level  { return il }
 func Warn() Level  { return wl }
 func Error() Level { return el }
+
+func ParseLevel(str string) (Level, error) {
+	switch strings.ToLower(str) {
+	case "trace":
+		return Trace(), nil
+	case "debug":
+		return Debug(), nil
+	case "info":
+		return Info(), nil
+	case "warn":
+		return Warn(), nil
+	case "error":
+		return Error(), nil
+	default:
+		return nil, fmt.Errorf("Unrecognized log level: %s. Recognized levels are case insensitive %v", str, levels)
+	}
+}

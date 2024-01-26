@@ -8,6 +8,7 @@ import (
 	"github.com/arobie1992/go-clarinet/v2/connection"
 	"github.com/arobie1992/go-clarinet/v2/crypto"
 	"github.com/arobie1992/go-clarinet/v2/data"
+	"github.com/arobie1992/go-clarinet/v2/log"
 	"github.com/arobie1992/go-clarinet/v2/peer"
 	"github.com/arobie1992/go-clarinet/v2/reputation"
 )
@@ -23,6 +24,10 @@ type inMemoryConnection struct {
 	witness  peer.ID
 	receiver peer.ID
 	status   connection.Status
+}
+
+func (c *inMemoryConnection) String() string {
+	return fmt.Sprintf("{%s %s %s %s %s}", c.id, c.sender, c.witness, c.receiver, c.status)
 }
 
 func (c *inMemoryConnection) ID() connection.ID {
@@ -68,10 +73,11 @@ func (c *inMemoryConnection) SetStatus(status connection.Status) (connection.Con
 type inMemoryConnectionStore struct {
 	globalLock sync.RWMutex
 	conns      map[connection.ID]*connEntry
+	l          log.Logger
 }
 
-func NewConnectionStore() connection.ConnectionStore {
-	return &inMemoryConnectionStore{}
+func NewConnectionStore(logger log.Logger) connection.ConnectionStore {
+	return &inMemoryConnectionStore{sync.RWMutex{}, map[connection.ID]*connEntry{}, logger}
 }
 
 func (cs *inMemoryConnectionStore) Create(sender, receiver peer.Peer, status connection.Status) (connection.ID, error) {
@@ -83,7 +89,16 @@ func (cs *inMemoryConnectionStore) Create(sender, receiver peer.Peer, status con
 	return id, err
 }
 
+func (cs *inMemoryConnectionStore) All() ([]connection.ID, error) {
+	connIDs := []connection.ID{}
+	for k := range cs.conns {
+		connIDs = append(connIDs, k)
+	}
+	return connIDs, nil
+}
+
 func (cs *inMemoryConnectionStore) Accept(id connection.ID, sender peer.Peer, receiver peer.Peer, status connection.Status) error {
+	cs.l.Trace("Accepting connection %s, sender: %s, receiver %s, status: %s", id, sender, receiver, status)
 	conn := inMemoryConnection{
 		id:       id,
 		sender:   sender.ID(),
@@ -91,12 +106,22 @@ func (cs *inMemoryConnectionStore) Accept(id connection.ID, sender peer.Peer, re
 		receiver: receiver.ID(),
 		status:   status,
 	}
+	cs.l.Trace("Created connection object: %v", conn)
 	cs.globalLock.Lock()
 	defer cs.globalLock.Unlock()
-	for _, ok := cs.conns[id]; ok; _, ok = cs.conns[id] {
-		return fmt.Errorf("Collision occurred while generating ID for new cconnection. ID: %s", id)
+	if existing, ok := cs.conns[id]; ok {
+		cs.l.Debug("Encountered collision for ID %s. Found: %v, New: %v", existing, conn)
+		return fmt.Errorf("A connection already exists for ID: %s", id)
 	}
+	cs.l.Debug("Inserting new connection entry for connection ID: %s", id)
 	cs.conns[id] = &connEntry{sync.RWMutex{}, &conn}
+	if cs.l.Level().AtLeast(log.Trace()) {
+		found, ok := cs.conns[id]
+		if !ok {
+			cs.l.Error("Failed to find just inserted connection %s", id)
+		}
+		cs.l.Trace("Found connection entry for connection %s: %v", id, found)
+	}
 	return nil
 }
 
@@ -195,10 +220,6 @@ func (m inMemoryMessage) VerifyWitness(publicKey crypto.PublicKey) (bool, error)
 	return publicKey.Verify(m.witnessSegs(), m.witnessSig)
 }
 
-func NewMessage() data.Message {
-	return inMemoryMessage{}
-}
-
 type inMemoryMessageStore struct {
 	globalLock sync.RWMutex
 	messages   map[string]data.Message
@@ -294,14 +315,13 @@ type inMemoryReputationStore struct {
 }
 
 func NewReputationStore(createFunc func(peerID peer.ID) reputation.Reputation) reputation.ReputationStore {
-	if createFunc == nil {
-		return &inMemoryReputationStore{
-			createFunc: func(peerID peer.ID) reputation.Reputation {
-				return proportionalReputation{peerID, 0, 0}
-			},
+	cf := createFunc
+	if cf == nil {
+		cf = func(peerID peer.ID) reputation.Reputation {
+			return proportionalReputation{peerID, 0, 0}
 		}
 	}
-	return &inMemoryReputationStore{createFunc: createFunc}
+	return &inMemoryReputationStore{sync.RWMutex{}, map[peer.ID]*repEntry{}, cf}
 }
 
 func (rs *inMemoryReputationStore) ensureRepExists(peerID peer.ID) *repEntry {
@@ -322,17 +342,17 @@ func (rs *inMemoryReputationStore) ensureRepExists(peerID peer.ID) *repEntry {
 	panic(fmt.Sprintf("Creation of reputation for peer %s failed.", peerID))
 }
 
-func (rs *inMemoryReputationStore) ReadOperation(peerID peer.ID, readFunc func(rep reputation.Reputation) error) error {
+func (rs *inMemoryReputationStore) Read(peerID peer.ID, readFunc func(rep reputation.Reputation) error) error {
 	e := rs.ensureRepExists(peerID)
 	e.lock.RLock()
 	defer e.lock.RUnlock()
 	return readFunc(e.rep)
 }
 
-func (rs *inMemoryReputationStore) WriteOperation(peerID peer.ID, writeFunc func(rep reputation.Reputation) (reputation.Reputation, error)) error {
+func (rs *inMemoryReputationStore) Update(peerID peer.ID, writeFunc func(rep reputation.Reputation) (reputation.Reputation, error)) error {
 	e := rs.ensureRepExists(peerID)
 	e.lock.Lock()
-	e.lock.Unlock()
+	defer e.lock.Unlock()
 	updated, err := writeFunc(e.rep)
 	if updated != nil {
 		e.rep = updated
