@@ -37,10 +37,10 @@ func TestConnectHandler(t *testing.T) {
 			}{
 				simpleID("sender"),
 				connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("self"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("self"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
 				},
 			},
 			handlerResp: nil,
@@ -62,10 +62,10 @@ func TestConnectHandler(t *testing.T) {
 			}{
 				simpleID("receiver"),
 				connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("self"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("self"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: nil,
@@ -86,10 +86,10 @@ func TestConnectHandler(t *testing.T) {
 				req    connection.ConnectRequest
 			}{
 				simpleID("sender"), connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("self"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("self"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: nil,
@@ -110,10 +110,10 @@ func TestConnectHandler(t *testing.T) {
 				req    connection.ConnectRequest
 			}{
 				simpleID("sender"), connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: nil,
@@ -134,19 +134,19 @@ func TestConnectHandler(t *testing.T) {
 				req    connection.ConnectRequest
 			}{
 				simpleID("sender"), connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("self"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("self"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: &connectHandlerResp{
 				peerID: simpleID("sender"),
 				request: connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("self"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("self"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 				resp: connection.ConnectResponse{
 					ConnectionID:  connID,
@@ -173,19 +173,19 @@ func TestConnectHandler(t *testing.T) {
 				req    connection.ConnectRequest
 			}{
 				simpleID("sender"), connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("self"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("self"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: &connectHandlerResp{
 				peerID: simpleID("sender"),
 				request: connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("self"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("self"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 				resp: connection.ConnectResponse{},
 				err:  errors.New("Test handler error"),
@@ -202,19 +202,19 @@ func TestConnectHandler(t *testing.T) {
 				req    connection.ConnectRequest
 			}{
 				simpleID("receiver"), connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("self"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("self"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: &connectHandlerResp{
 				peerID: simpleID("receiver"),
 				request: connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("self"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("self"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 				resp: connection.ConnectResponse{
 					ConnectionID:  connID,
@@ -241,19 +241,19 @@ func TestConnectHandler(t *testing.T) {
 				req    connection.ConnectRequest
 			}{
 				simpleID("sender"), connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("self"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("self"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
 				},
 			},
 			handlerResp: &connectHandlerResp{
 				peerID: simpleID("sender"),
 				request: connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("self"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("self"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
 				},
 				resp: connection.ConnectResponse{
 					ConnectionID:  connID,
@@ -298,7 +298,7 @@ func TestConnectHandler(t *testing.T) {
 		}
 
 		// Only check if conns match if it hasn't failed yet. If it failed already no point in checking.
-		if conn := ctx.connectionStore.conns[test.input.req.ConnID]; !connsMatch(t, test.expectedConn, conn) {
+		if conn := ctx.connectionStore.conns[test.input.req.ConnectionID]; !connsMatch(test.expectedConn, conn) {
 			t.Errorf("Test %d incorrect connection. Expected: %s, Got: %s", i, test.expectedConn, conn)
 		}
 
@@ -338,10 +338,10 @@ func TestWitnessHandler(t *testing.T) {
 			}{
 				simpleID("sender"),
 				connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
 				},
 			},
 			handlerResp: nil,
@@ -363,10 +363,10 @@ func TestWitnessHandler(t *testing.T) {
 			}{
 				simpleID("receiver"),
 				connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: nil,
@@ -391,10 +391,10 @@ func TestWitnessHandler(t *testing.T) {
 				req    connection.WitnessRequest
 			}{
 				simpleID("other"), connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: nil,
@@ -415,10 +415,10 @@ func TestWitnessHandler(t *testing.T) {
 				req    connection.WitnessRequest
 			}{
 				simpleID("receiver"), connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("self"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("self"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: nil,
@@ -439,10 +439,10 @@ func TestWitnessHandler(t *testing.T) {
 				req    connection.WitnessRequest
 			}{
 				simpleID("sender"), connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("self"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("self"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: nil,
@@ -463,19 +463,19 @@ func TestWitnessHandler(t *testing.T) {
 				req    connection.WitnessRequest
 			}{
 				simpleID("sender"), connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: &witnessHandlerResp{
 				peerID: simpleID("sender"),
 				request: connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 				resp: connection.WitnessResponse{
 					ConnectionID:  connID,
@@ -502,19 +502,19 @@ func TestWitnessHandler(t *testing.T) {
 				req    connection.WitnessRequest
 			}{
 				simpleID("sender"), connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: &witnessHandlerResp{
 				peerID: simpleID("sender"),
 				request: connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 				resp: connection.WitnessResponse{},
 				err:  errors.New("Test handler error"),
@@ -531,19 +531,19 @@ func TestWitnessHandler(t *testing.T) {
 				req    connection.WitnessRequest
 			}{
 				simpleID("receiver"), connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 			},
 			handlerResp: &witnessHandlerResp{
 				peerID: simpleID("receiver"),
 				request: connection.WitnessRequest{
-					ConnID:   connID,
-					Sender:   simpleID("sender"),
-					Receiver: simpleID("receiver"),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       simpleID("sender"),
+					Receiver:     simpleID("receiver"),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				},
 				resp: connection.WitnessResponse{
 					ConnectionID:  connID,
@@ -588,7 +588,7 @@ func TestWitnessHandler(t *testing.T) {
 		}
 
 		// Only check if conns match if it hasn't failed yet. If it failed already no point in checking.
-		if conn := ctx.connectionStore.conns[test.input.req.ConnID]; !connsMatch(t, test.expectedConn, conn) {
+		if conn := ctx.connectionStore.conns[test.input.req.ConnectionID]; !connsMatch(test.expectedConn, conn) {
 			t.Errorf("Test %d incorrect connection. Expected: %s, Got: %s", i, test.expectedConn, conn)
 		}
 
@@ -823,7 +823,7 @@ func TestCloseHandler(t *testing.T) {
 
 // Need to use *testConnection rather than connection.Connectioon beceause of Go's typed nil
 // https://codefibershq.com/blog/golang-why-nil-is-not-always-nil
-func connsMatch(t *testing.T, expected, actual *testConnection) bool {
+func connsMatch(expected, actual *testConnection) bool {
 	if expected == actual {
 		return true
 	}
@@ -836,7 +836,3 @@ func connsMatch(t *testing.T, expected, actual *testConnection) bool {
 		expected.Receiver() == actual.Receiver() &&
 		expected.Status() == actual.Status()
 }
-
-//tests
-// - WitnessNotificationHandler
-// - CloseHandler

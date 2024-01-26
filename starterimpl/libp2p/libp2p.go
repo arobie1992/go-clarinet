@@ -266,7 +266,7 @@ func NewPeerStore(host host.Host, log log.Logger) peer.PeerStore {
 }
 
 func (ps *libp2pPeerStore) AddAddr(id peer.ID, addr peer.Address) error {
-	ps.log.Trace("Will add addreess %s for peer %s", addr, id)
+	ps.log.Trace("Will add address %s for peer %s", addr, id)
 	maddr, err := multiaddr.NewMultiaddr(string(addr))
 	if err != nil {
 		return err

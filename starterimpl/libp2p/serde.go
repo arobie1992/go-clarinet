@@ -55,7 +55,7 @@ func (t *libp2pTransport) deserialize(in []byte, out any) error {
 func (t *libp2pTransport) serializeConnectRequest(r connection.ConnectRequest) ([]byte, error) {
 	sender := encodePeerID(r.Sender)
 	recvr := encodePeerID(r.Receiver)
-	s := fmt.Sprintf("%s.%s.%s.%s;", r.ConnID, sender, recvr, r.Options.WitnessSelector)
+	s := fmt.Sprintf("%s.%s.%s.%s;", r.ConnectionID, sender, recvr, r.Options.WitnessSelector)
 	return []byte(s), nil
 }
 
@@ -85,7 +85,7 @@ func (t *libp2pTransport) deserializeConnectRequest(in []byte, r *connection.Con
 		return err
 	}
 	t.l.Trace("Deserialized witness selector %s", ws)
-	r.ConnID = connection.ID(connID)
+	r.ConnectionID = connection.ID(connID)
 	r.Sender = sender
 	r.Receiver = recvr
 	r.Options = connection.Options{WitnessSelector: ws}
@@ -139,7 +139,7 @@ func (t *libp2pTransport) deserializeConnectResponse(in []byte, r *connection.Co
 func (t *libp2pTransport) serializeWitnessRequest(r connection.WitnessRequest) ([]byte, error) {
 	sender := encodePeerID(r.Sender)
 	recvr := encodePeerID(r.Receiver)
-	s := fmt.Sprintf("%s.%s.%s.%s;", r.ConnID, sender, recvr, r.Options.WitnessSelector)
+	s := fmt.Sprintf("%s.%s.%s.%s;", r.ConnectionID, sender, recvr, r.Options.WitnessSelector)
 	return []byte(s), nil
 }
 
@@ -164,7 +164,7 @@ func (t *libp2pTransport) deserializeWitnessRequest(in []byte, r *connection.Wit
 	if err != nil {
 		return err
 	}
-	r.ConnID = connection.ID(connID)
+	r.ConnectionID = connection.ID(connID)
 	r.Sender = sender
 	r.Receiver = recvr
 	r.Options = connection.Options{WitnessSelector: ws}

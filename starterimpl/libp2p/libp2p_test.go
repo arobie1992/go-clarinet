@@ -183,10 +183,10 @@ func TestTransportExchange(t *testing.T) {
 	}{
 		{
 			connection.ConnectRequest{
-				ConnID:   connID,
-				Sender:   ctx.sender.ID(),
-				Receiver: ctx.receiver.ID(),
-				Options:  connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
+				ConnectionID: connID,
+				Sender:       ctx.sender.ID(),
+				Receiver:     ctx.receiver.ID(),
+				Options:      connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
 			},
 			&connection.ConnectResponse{},
 			// test all the fields at once
@@ -200,10 +200,10 @@ func TestTransportExchange(t *testing.T) {
 		},
 		{
 			connection.WitnessRequest{
-				ConnID:   connID,
-				Sender:   ctx.sender.ID(),
-				Receiver: ctx.receiver.ID(),
-				Options:  connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
+				ConnectionID: connID,
+				Sender:       ctx.sender.ID(),
+				Receiver:     ctx.receiver.ID(),
+				Options:      connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
 			},
 			&connection.WitnessResponse{},
 			// test all the fields at once
@@ -265,10 +265,10 @@ func TestIncorrectTypeError(t *testing.T) {
 		{
 			func() error {
 				req := connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   ctx.sender.ID(),
-					Receiver: ctx.receiver.ID(),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
+					ConnectionID: connID,
+					Sender:       ctx.sender.ID(),
+					Receiver:     ctx.receiver.ID(),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorSender()},
 				}
 				_, err := ctx.senderTx.Exchange(receiverPeer, transport.Options{}, req, map[string]string{})
 				return err
@@ -310,10 +310,10 @@ func TestReceiverReset(t *testing.T) {
 		{
 			func() error {
 				req := connection.ConnectRequest{
-					ConnID:   connID,
-					Sender:   ctx.sender.ID(),
-					Receiver: ctx.receiver.ID(),
-					Options:  connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
+					ConnectionID: connID,
+					Sender:       ctx.sender.ID(),
+					Receiver:     ctx.receiver.ID(),
+					Options:      connection.Options{WitnessSelector: connection.WitnessSelectorReceiver()},
 				}
 				_, err := ctx.senderTx.Exchange(receiverPeer, transport.Options{}, req, &connection.ConnectResponse{})
 				return err
@@ -339,12 +339,6 @@ func TestReceiverReset(t *testing.T) {
 		}
 	}
 }
-
-// TODO:
-// - errors in response for connect
-// - reject & reasons for connect
-// - errors in response for witness
-// - reject & reasons for witness
 
 //
 // These are the basic handlers that can be used for any test that requires success.

@@ -40,7 +40,6 @@ func (p *testPeer) Addresses() []peer.Address {
 	return p.addresses
 }
 
-// ID implements peer.Peer.
 func (p *testPeer) ID() peer.ID {
 	return p.id
 }
@@ -61,7 +60,7 @@ func verifyConnection(t *testing.T, cs connection.ConnectionStore, id connection
 			t.Errorf("Receiver does not match. Expected: %s, Got: %s", receiver, conn.Receiver())
 		}
 		if conn.Status() != status {
-			t.Errorf("Status does not match. Expected: %s, Got: %s", connection.Open(), conn.Status())
+			t.Errorf("Status does not match. Expected: %s, Got: %s", status, conn.Status())
 		}
 		return nil
 	})
@@ -251,7 +250,7 @@ func TestConnectionUpdateOneAtATime(t *testing.T) {
 		err := cs.Update(connID, func(conn connection.Connection) (connection.Connection, error) {
 			wg.Done()
 			// wait long enough that the other go func should have ideally had time to start and hit the write lock
-			// sleep after we notify the wait group because
+			// sleep after we notify the wait group so the other func can start proceeding
 			time.Sleep(2 * time.Second)
 			return conn.SetWitness(witness1.ID())
 		})
@@ -384,7 +383,7 @@ func TestConnectionUpdateBlocksRead(t *testing.T) {
 		err := cs.Update(connID, func(conn connection.Connection) (connection.Connection, error) {
 			wg.Done()
 			// wait long enough that the other go func should have ideally had time to start and hit the write lock
-			// sleep after we notify the wait group because
+			// sleep after we notify the wait group so the other func can start proceeding
 			time.Sleep(2 * time.Second)
 			return conn.SetWitness(witness.ID())
 		})
@@ -435,7 +434,7 @@ func TestConnectionReadBlocksUpdate(t *testing.T) {
 		err := cs.Read(connID, func(conn connection.Connection) error {
 			wg.Done()
 			// wait long enough that the other go func should have ideally had time to start and hit the write lock
-			// sleep after we notify the wait group because
+			// sleep after we notify the wait group so the other func can start proceeding
 			time.Sleep(2 * time.Second)
 			return nil
 		})
@@ -500,8 +499,8 @@ type testRep struct {
 	peerID peer.ID
 }
 
-func (t testRep) PeerID() peer.ID {
-	return t.peerID
+func (r testRep) PeerID() peer.ID {
+	return r.peerID
 }
 
 func (r testRep) Reward() reputation.Reputation {
@@ -708,7 +707,7 @@ func TestReputationUpdateBlocksRead(t *testing.T) {
 		err := rs.Update(peerID, func(rep reputation.Reputation) (reputation.Reputation, error) {
 			wg.Done()
 			// wait long enough that the other go func should have ideally had time to start and hit the write lock
-			// sleep after we notify the wait group because
+			// sleep after we notify the wait group so the other func can start proceeding
 			time.Sleep(2 * time.Second)
 			return rep.WeakPenalize(), nil
 		})
@@ -726,12 +725,12 @@ func TestReputationUpdateBlocksRead(t *testing.T) {
 		wg.Wait()
 		err := rs.Read(peerID, func(rep reputation.Reputation) error {
 			if rep.Value() != 0 {
-				t.Errorf("Read occurred before update completed: %f", rep.Value())
+				t.Error("Read occurred before update completed")
 			}
 			return nil
 		})
 		if err != nil {
-			t.Errorf("Error occurred during update call: %s", err)
+			t.Errorf("Error occurred during read call: %s", err)
 		}
 		testWG.Done()
 	}()
@@ -752,7 +751,7 @@ func TestReputationReadBlocksUpdate(t *testing.T) {
 		err := rs.Read(peerID, func(rep reputation.Reputation) error {
 			wg.Done()
 			// wait long enough that the other go func should have ideally had time to start and hit the write lock
-			// sleep after we notify the wait group because
+			// sleep after we notify the wait group so the other func can start proceeding
 			time.Sleep(2 * time.Second)
 			return nil
 		})

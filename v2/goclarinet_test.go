@@ -237,7 +237,7 @@ func TestConnect(t *testing.T) {
 						return match, 0, nil
 					}
 					*typedResp = connection.ConnectResponse{
-						ConnectionID:  typedData.ConnID,
+						ConnectionID:  typedData.ConnectionID,
 						Errors:        []string{},
 						Accepted:      true,
 						RejectReasons: []string{},
@@ -262,7 +262,7 @@ func TestConnect(t *testing.T) {
 						return match, 0, nil
 					}
 					*typedResp = connection.WitnessResponse{
-						ConnectionID:  typedData.ConnID,
+						ConnectionID:  typedData.ConnectionID,
 						Errors:        []string{},
 						Accepted:      true,
 						RejectReasons: []string{},
@@ -315,7 +315,7 @@ func TestConnect(t *testing.T) {
 						return match, 0, nil
 					}
 					*typedResp = connection.ConnectResponse{
-						ConnectionID:  typedData.ConnID,
+						ConnectionID:  typedData.ConnectionID,
 						Errors:        []string{},
 						Accepted:      true,
 						RejectReasons: []string{},
@@ -356,7 +356,7 @@ func TestConnect(t *testing.T) {
 						return match, 0, nil
 					}
 					*typedResp = connection.ConnectResponse{
-						ConnectionID:  typedData.ConnID,
+						ConnectionID:  typedData.ConnectionID,
 						Errors:        []string{"test connect error"},
 						Accepted:      true,
 						RejectReasons: []string{},
@@ -397,7 +397,7 @@ func TestConnect(t *testing.T) {
 						return match, 0, nil
 					}
 					*typedResp = connection.ConnectResponse{
-						ConnectionID:  typedData.ConnID,
+						ConnectionID:  typedData.ConnectionID,
 						Errors:        []string{},
 						Accepted:      false,
 						RejectReasons: []string{"test reject reason"},
@@ -519,7 +519,7 @@ func TestConnect(t *testing.T) {
 						return match, 0, nil
 					}
 					*typedResp = connection.ConnectResponse{
-						ConnectionID:  typedData.ConnID,
+						ConnectionID:  typedData.ConnectionID,
 						Errors:        []string{},
 						Accepted:      true,
 						RejectReasons: []string{},

@@ -11,7 +11,7 @@ import (
 func TestParseWitnessSelector(t *testing.T) {
 	tests := []struct {
 		in              string
-		expecetedOutput connection.WitnessSelector
+		expectedOutput connection.WitnessSelector
 		expectedErr     error
 	}{
 		{"Sender", connection.WitnessSelectorSender(), nil},
@@ -21,8 +21,8 @@ func TestParseWitnessSelector(t *testing.T) {
 
 	for i, test := range tests {
 		selector, err := connection.ParseWitnessSelector(test.in)
-		if selector != test.expecetedOutput {
-			t.Errorf("Test %d incorrect output. Expected: %s, Got: %s", i, test.expecetedOutput, selector)
+		if selector != test.expectedOutput {
+			t.Errorf("Test %d incorrect output. Expected: %s, Got: %s", i, test.expectedOutput, selector)
 			continue
 		}
 		if test.expectedErr == nil && err == nil {
