@@ -22,6 +22,7 @@ type nodeContext struct {
 	transport                  *testTransport
 	connectHandler             *testConnectHandler
 	witnessHandler             *testWitnessHandler
+	peerRequestHandler         *testPeerRequestHandler
 	witnessNotificationHandler *testWitnessNotificationHandler
 	closeHandler               *testCloseHandler
 	log                        *outputCapturingLog
@@ -41,6 +42,7 @@ func createNodeContext(t *testing.T) nodeContext {
 		&testTransport{},
 		&testConnectHandler{},
 		&testWitnessHandler{},
+		&testPeerRequestHandler{},
 		&testWitnessNotificationHandler{},
 		&testCloseHandler{},
 		l,
@@ -58,6 +60,7 @@ func createNodeContext(t *testing.T) nodeContext {
 		transport.Handlers{
 			ConnectHandler:             ctx.connectHandler,
 			WitnessHandler:             ctx.witnessHandler,
+			PeerRequestHandler:         ctx.peerRequestHandler,
 			WitnessNotificationHandler: ctx.witnessNotificationHandler,
 			CloseHandler:               ctx.closeHandler,
 		},
@@ -938,4 +941,148 @@ func isExpected(expected, actual error) bool {
 		return false
 	}
 	return true
+}
+
+func TestRequestPeers(t *testing.T) {
+	ctx := createNodeContext(t)
+
+	p := &testPeer{simpleID("peer"), []peer.Address{}}
+	opts := transport.Options{}
+
+	p1 := &testPeer{simpleID("peer1"), []peer.Address{"addr1"}}
+	p2 := &testPeer{simpleID("peer2"), []peer.Address{"addr2"}}
+
+	tests := []struct {
+		request         peer.PeersRequest
+		transportAction exchangeAction
+		peerstoreAction *struct {
+			method string
+			action struct{ err error }
+		}
+		expectedPeers []peer.Peer
+		expectedErr   error
+	}{
+		// failure: must request at least one peer
+		{
+			request:       peer.PeersRequest{Num: 0},
+			expectedPeers: []peer.Peer{},
+			expectedErr:   errors.New("Must request at least one peer."),
+		},
+		// failure: exchange returns an error
+		{
+			request: peer.PeersRequest{Num: 1},
+			transportAction: func(inp peer.Peer, o transport.Options, req, resp any) (bool, int, error) {
+				match := reflect.DeepEqual(ctx.peerstore.self, inp)
+				match = match && reflect.DeepEqual(opts, o)
+				match = match && reflect.DeepEqual(req, peer.PeersRequest{Num: 1})
+				_, ok := resp.(*peer.PeersResponse)
+				if !ok {
+					return false, 0, nil
+				}
+				return true, 0, errors.New("Test exchange error")
+			},
+			expectedPeers: []peer.Peer{},
+			expectedErr:   errors.New("Test exchange error"),
+		},
+		// failure: one of the addresses fails
+		{
+			request: peer.PeersRequest{Num: 1},
+			transportAction: func(inp peer.Peer, o transport.Options, req, resp any) (bool, int, error) {
+				match := reflect.DeepEqual(p, inp)
+				match = match && reflect.DeepEqual(opts, o)
+				match = match && reflect.DeepEqual(req, peer.PeersRequest{Num: 1})
+				typedResp, ok := resp.(*peer.PeersResponse)
+				if !ok {
+					return false, 0, nil
+				}
+				typedResp.Peers = []peer.Peer{p1}
+				return true, 0, nil
+			},
+			peerstoreAction: &struct {
+				method string
+				action struct{ err error }
+			}{
+				method: "AddAddr",
+				action: struct{ err error }{err: errors.New("Test peerstore error")},
+			},
+			expectedPeers: []peer.Peer{p1},
+			expectedErr:   errors.New("Errors: [Encountered error adding address addr1 for peer peer1: Test peerstore error]"),
+		},
+		// success: fewer peers than requested
+		{
+			request: peer.PeersRequest{Num: 2},
+			transportAction: func(inp peer.Peer, o transport.Options, req, resp any) (bool, int, error) {
+				match := reflect.DeepEqual(p, inp)
+				match = match && reflect.DeepEqual(opts, o)
+				match = match && reflect.DeepEqual(req, peer.PeersRequest{Num: 1})
+				typedResp, ok := resp.(*peer.PeersResponse)
+				if !ok {
+					return false, 0, nil
+				}
+				typedResp.Peers = []peer.Peer{p1}
+				return true, 0, nil
+			},
+			expectedPeers: []peer.Peer{p1},
+			expectedErr:   nil,
+		},
+		// success: as many peers as requested
+		{
+			request: peer.PeersRequest{Num: 1},
+			transportAction: func(inp peer.Peer, o transport.Options, req, resp any) (bool, int, error) {
+				match := reflect.DeepEqual(p, inp)
+				match = match && reflect.DeepEqual(opts, o)
+				match = match && reflect.DeepEqual(req, peer.PeersRequest{Num: 1})
+				typedResp, ok := resp.(*peer.PeersResponse)
+				if !ok {
+					return false, 0, nil
+				}
+				typedResp.Peers = []peer.Peer{p1}
+				return true, 0, nil
+			},
+			expectedPeers: []peer.Peer{p1},
+			expectedErr:   nil,
+		},
+		// success: more peers than requested
+		{
+			request: peer.PeersRequest{Num: 1},
+			transportAction: func(inp peer.Peer, o transport.Options, req, resp any) (bool, int, error) {
+				match := reflect.DeepEqual(p, inp)
+				match = match && reflect.DeepEqual(opts, o)
+				match = match && reflect.DeepEqual(req, peer.PeersRequest{Num: 1})
+				typedResp, ok := resp.(*peer.PeersResponse)
+				if !ok {
+					return false, 0, nil
+				}
+				typedResp.Peers = []peer.Peer{p1, p2}
+				return true, 0, nil
+			},
+			expectedPeers: []peer.Peer{p1},
+			expectedErr:   errors.New("Errors: [Target node returned more peers than requested.]"),
+		},
+	}
+
+	for i, test := range tests {
+		// setup
+		ctx.transport.exchangeActions = append(ctx.transport.exchangeActions, test.transportAction)
+		if test.peerstoreAction != nil {
+			ctx.peerstore.actions[test.peerstoreAction.method] = test.peerstoreAction.action
+		}
+
+		// run test
+		peers, err := ctx.node.RequestPeers(p, test.request, opts)
+		if !isExpected(test.expectedErr, err) {
+			t.Errorf("Test %d incorrect error. Expected: %s, Got: %s", i, test.expectedErr, err)
+			goto cleanup
+		}
+
+		if !reflect.DeepEqual(test.expectedPeers, peers) {
+			t.Errorf("Test %d peers did not match. Expected %v, Got; %v", i, test.expectedPeers, peers)
+		}
+
+	cleanup:
+		ctx.transport.exchangeActions = nil
+		if test.peerstoreAction != nil {
+			delete(ctx.peerstore.actions, test.peerstoreAction.method)
+		}
+	}
 }

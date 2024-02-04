@@ -821,6 +821,93 @@ func TestCloseHandler(t *testing.T) {
 	}
 }
 
+func TestPeerRequestHandler(t *testing.T) {
+	ctx := createNodeContext(t)
+
+	peerID := simpleID("peerID")
+	p := &testPeer{
+		id:        simpleID("otherPeer"),
+		addresses: []peer.Address{"testAdd"},
+	}
+
+	tests := []struct {
+		request          peer.PeersRequest
+		action           *peerRequestHandlerAction
+		peers            []*testPeer
+		expectedErr      error
+		expectedResponse *peer.PeersResponse
+	}{
+		// failure: handler returns error
+		{
+			request: peer.PeersRequest{Num: 1},
+			action: &peerRequestHandlerAction{
+				peerID:  peerID,
+				request: peer.PeersRequest{Num: 1},
+				resp:    nil,
+				err:     errors.New("test error"),
+			},
+			expectedErr:      errors.New("test error"),
+			expectedResponse: nil,
+		},
+		// success: handler returns resp
+		{
+			request: peer.PeersRequest{Num: 1},
+			action: &peerRequestHandlerAction{
+				peerID:  peerID,
+				request: peer.PeersRequest{Num: 1},
+				resp:    &peer.PeersResponse{Peers: []peer.Peer{p}},
+				err:     nil,
+			},
+			expectedErr:      nil,
+			expectedResponse: &peer.PeersResponse{Peers: []peer.Peer{p}},
+		},
+		// success: wrapper gets peers
+		{
+			request: peer.PeersRequest{Num: 1},
+			action: &peerRequestHandlerAction{
+				peerID:  peerID,
+				request: peer.PeersRequest{Num: 1},
+				resp:    nil,
+				err:     nil,
+			},
+			peers:            []*testPeer{p},
+			expectedErr:      nil,
+			expectedResponse: &peer.PeersResponse{Peers: []peer.Peer{p}},
+		},
+	}
+
+	for i, test := range tests {
+		// setup
+		if test.action != nil {
+			ctx.peerRequestHandler.actions = append(ctx.peerRequestHandler.actions, *test.action)
+		}
+		if test.peers != nil {
+			for _, p := range test.peers {
+				ctx.peerstore.peers[p.ID()] = p
+			}
+		}
+
+		// run test
+		resp, err := ctx.transport.peerRequestHandler.Handle(peerID, test.request)
+		if !isExpected(test.expectedErr, err) {
+			t.Errorf("Test %d incorrect error. Expected: %s, Got: %s", i, test.expectedErr, err)
+			goto cleanup
+		}
+
+		if !reflect.DeepEqual(test.expectedResponse, resp) {
+			t.Errorf("Test %d incorrect response. Expected: %s, Got: %s", i, test.expectedResponse, resp)
+		}
+
+	cleanup:
+		ctx.peerRequestHandler.actions = nil
+		if test.peers != nil {
+			for _, p := range test.peers {
+				delete(ctx.peerstore.peers, p.ID())
+			}
+		}
+	}
+}
+
 // Need to use *testConnection rather than connection.Connectioon beceause of Go's typed nil
 // https://codefibershq.com/blog/golang-why-nil-is-not-always-nil
 func connsMatch(expected, actual *testConnection) bool {

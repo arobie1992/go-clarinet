@@ -305,6 +305,7 @@ type testTransport struct {
 	sendActions                []sendAction
 	connectHandler             transport.ExchangeHandler[connection.ConnectRequest, connection.ConnectResponse]
 	witnessHandler             transport.ExchangeHandler[connection.WitnessRequest, connection.WitnessResponse]
+	peerRequestHandler         transport.ExchangeHandler[peer.PeersRequest, *peer.PeersResponse]
 	witnessNotificationHandler transport.SendHandler[connection.WitnessNotification]
 	closeHandler               transport.SendHandler[connection.CloseRequest]
 }
@@ -322,11 +323,13 @@ func (tx *testTransport) Exchange(peer peer.Peer, options transport.Options, dat
 func (tx *testTransport) RegisterHandlers(
 	connectHandler transport.ExchangeHandler[connection.ConnectRequest, connection.ConnectResponse],
 	witnessHandler transport.ExchangeHandler[connection.WitnessRequest, connection.WitnessResponse],
+	peerRequestHandler transport.ExchangeHandler[peer.PeersRequest, *peer.PeersResponse],
 	witnessNotificationHandler transport.SendHandler[connection.WitnessNotification],
 	closeHandler transport.SendHandler[connection.CloseRequest],
 ) error {
 	tx.connectHandler = connectHandler
 	tx.witnessHandler = witnessHandler
+	tx.peerRequestHandler = peerRequestHandler
 	tx.witnessNotificationHandler = witnessNotificationHandler
 	tx.closeHandler = closeHandler
 	return nil
@@ -387,6 +390,30 @@ func (h *testWitnessHandler) Handle(peerID peer.ID, request connection.WitnessRe
 }
 
 func (h *testWitnessHandler) Options() transport.Options {
+	return transport.Options{}
+}
+
+type peerRequestHandlerAction struct {
+	peerID  peer.ID
+	request peer.PeersRequest
+	resp    *peer.PeersResponse
+	err     error
+}
+
+type testPeerRequestHandler struct {
+	actions []peerRequestHandlerAction
+}
+
+func (h *testPeerRequestHandler) Handle(peerID peer.ID, request peer.PeersRequest) (*peer.PeersResponse, error) {
+	for _, r := range h.actions {
+		if r.peerID == peerID && reflect.DeepEqual(request, r.request) {
+			return r.resp, r.err
+		}
+	}
+	return nil, errors.New("No action found for given peerID and request")
+}
+
+func (h *testPeerRequestHandler) Options() transport.Options {
 	return transport.Options{}
 }
 

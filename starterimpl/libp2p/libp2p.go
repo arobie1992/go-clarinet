@@ -123,6 +123,7 @@ func readWriteWrapper[I, O any](t *libp2pTransport, req I, handler transport.Exc
 func (t *libp2pTransport) RegisterHandlers(
 	connectHandler transport.ConnectHandler,
 	witnessHandler transport.WitnessHandler,
+	peerRequestHandler transport.PeerRequestHandler,
 	witnessNotificationHandler transport.WitnessNotificationHandler,
 	closeHandler transport.CloseHandler,
 ) error {
@@ -131,6 +132,9 @@ func (t *libp2pTransport) RegisterHandlers(
 
 	adaptedWitnessHandler := readWriteWrapper(t, connection.WitnessRequest{}, witnessHandler, true)
 	t.host.SetStreamHandler("/witness", streamCleanupWrapper(t.l, adaptedWitnessHandler))
+
+	adaptedPeerRequestHandler := readWriteWrapper(t, peer.PeersRequest{}, peerRequestHandler, true)
+	t.host.SetStreamHandler("/peers", streamCleanupWrapper(t.l, adaptedPeerRequestHandler))
 
 	adaptedWitnessNotificationHandler := readWriteWrapper(
 		t,
@@ -194,7 +198,7 @@ func (t *libp2pTransport) Exchange(peer peer.Peer, options transport.Options, da
 	return len(recv), nil
 }
 
-func (t *libp2pTransport) sendInternal(peer peer.Peer, options transport.Options, data any) (network.Stream, error) {
+func (t *libp2pTransport) sendInternal(p peer.Peer, options transport.Options, data any) (network.Stream, error) {
 	var protocolId protocol.ID
 	switch data.(type) {
 	case connection.ConnectRequest:
@@ -205,6 +209,8 @@ func (t *libp2pTransport) sendInternal(peer peer.Peer, options transport.Options
 		protocolId = protocol.ID("/close")
 	case connection.WitnessNotification:
 		protocolId = protocol.ID("/witness-notification")
+	case peer.PeersRequest:
+		protocolId = protocol.ID("/peers")
 	default:
 		return nil, fmt.Errorf(
 			"Unsupported data type: %T. Supported types are: [%T, %T, %T, %T]",
@@ -217,7 +223,7 @@ func (t *libp2pTransport) sendInternal(peer peer.Peer, options transport.Options
 	}
 	t.l.Debug("Protocol ID: %s", protocolId)
 
-	s, err := t.openStream(peer, protocolId, options)
+	s, err := t.openStream(p, protocolId, options)
 	if err != nil {
 		return s, err
 	}

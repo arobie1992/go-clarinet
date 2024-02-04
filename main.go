@@ -199,6 +199,7 @@ func main() {
 		transport.Handlers{
 			ConnectHandler:             &connectHandler{},
 			WitnessHandler:             &witnessHandler{},
+			PeerRequestHandler:         &peerRequestHandler{},
 			WitnessNotificationHandler: &witnessNotificationHandler{},
 			CloseHandler:               &closeHandler{},
 		},
@@ -252,6 +253,18 @@ func (h *witnessHandler) Options() transport.Options {
 	return h.options
 }
 
+type peerRequestHandler struct {
+	options transport.Options
+}
+
+func (h *peerRequestHandler) Handle(peerID peer.ID, request peer.PeersRequest) (*peer.PeersResponse, error) {
+	return nil, nil
+}
+
+func (h *peerRequestHandler) Options() transport.Options {
+	return h.options
+}
+
 type witnessNotificationHandler struct {
 	options transport.Options
 }
@@ -281,6 +294,7 @@ func startHttpServer(n *v2.Node, logger log.Logger, cfg *config) {
 	http.HandleFunc("/peer", adapt(req{}, &updatePeerHandler{n}))
 	http.HandleFunc("/peers", getAdapt(req{}, &listPeerHandler{n, logger}))
 	http.HandleFunc("/connections", getAdapt(req{}, &listConnectionsHandler{n, logger}))
+	http.HandleFunc("/requestpeers", adapt(req{}, &requestPeerHandler{n}))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.AdminPort), nil); err != nil {
 		panic(fmt.Sprintf("Failed to start http server: %s", err))
 	}
@@ -378,6 +392,32 @@ type connResp struct {
 	Witness  string
 	Receiver string
 	Status   string
+}
+
+type requestPeerHandler struct {
+	n *v2.Node
+}
+
+func (h *requestPeerHandler) handle(r req) (map[string][]peerResp, error) {
+	id, err := libp2p.ParsePeerID(r.PeerID)
+	if err != nil {
+		return nil, err
+	}
+	addresses := []peer.Address{}
+	for _, a := range r.Addresses {
+		addresses = append(addresses, peer.Address(a))
+	}
+	p := libp2p.NewPeer(id, addresses)
+	peers, err := h.n.RequestPeers(p, peer.PeersRequest{Num: 1}, transport.Options{})
+	if err != nil {
+		return nil, err
+	}
+
+	var mappedPeers []peerResp
+	for _, p := range peers {
+		mappedPeers = append(mappedPeers, peerResp{p.ID(), p.Addresses()})
+	}
+	return map[string][]peerResp{"peers": mappedPeers}, nil
 }
 
 type handler[I, O any] interface {

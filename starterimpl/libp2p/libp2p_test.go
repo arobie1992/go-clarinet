@@ -79,15 +79,16 @@ func (id simpleID) String() string {
 	return string(id)
 }
 
-func createTransportCtx() (*transportCtx, error) {
+func createTransportCtx(t *testing.T) *transportCtx {
+	t.Helper()
 	// port 0 should tell it to pick a random ephemeral port
 	sender, err := lp2p.New(lp2p.ListenAddrStrings("/ip4/127.0.0.1/udp/0/quic-v1"), lp2p.DisableRelay())
 	if err != nil {
-		return nil, err
+		t.Fatalf("Encountered error while creating transport context: %s", err)
 	}
 	receiver, err := lp2p.New(lp2p.ListenAddrStrings("/ip4/127.0.0.1/udp/0/quic-v1"), lp2p.DisableRelay())
 	if err != nil {
-		return nil, err
+		t.Fatalf("Encountered error while creating transport context: %s", err)
 	}
 	for _, addr := range receiver.Addrs() {
 		sender.Peerstore().AddAddr(receiver.ID(), addr, peerstore.PermanentAddrTTL)
@@ -101,12 +102,16 @@ func createTransportCtx() (*transportCtx, error) {
 
 	receiverLog := outputCapturingLog{log.Info(), []logEntry{}}
 	receiverTx := libp2p.NewTransport(receiver, &receiverLog)
-	return &transportCtx{sender, senderTx, &senderLog, receiver, receiverTx, &receiverLog}, nil
+	return &transportCtx{sender, senderTx, &senderLog, receiver, receiverTx, &receiverLog}
 }
 
 type simplePeer struct {
 	id        peer.ID
 	addresses []peer.Address
+}
+
+func (p *simplePeer) String() string {
+	return fmt.Sprintf("{ %s %v }", p.id, p.addresses)
 }
 
 func (p *simplePeer) Addresses() []peer.Address {
@@ -118,13 +123,11 @@ func (p *simplePeer) ID() peer.ID {
 }
 
 func TestTransportSend(t *testing.T) {
-	ctx, err := createTransportCtx()
-	if err != nil {
-		t.Fatalf("Error while creating ctx: %s", err)
-	}
+	ctx := createTransportCtx(t)
 	ctx.receiverTx.RegisterHandlers(
-		&testConnectHandler{connection.ConnectResponse{}, nil, transport.Options{}},
-		&testWitnessHandler{connection.WitnessResponse{}, nil, transport.Options{}},
+		&testExchangeHandler[connection.ConnectRequest, connection.ConnectResponse]{connection.ConnectResponse{}, nil, transport.Options{}},
+		&testExchangeHandler[connection.WitnessRequest, connection.WitnessResponse]{connection.WitnessResponse{}, nil, transport.Options{}},
+		&testExchangeHandler[peer.PeersRequest, *peer.PeersResponse]{&peer.PeersResponse{}, nil, transport.Options{}},
 		&testWitnessNotificationHandler{nil, transport.Options{}},
 		&testCloseHandler{nil, transport.Options{}},
 	)
@@ -148,10 +151,7 @@ func TestTransportSend(t *testing.T) {
 }
 
 func TestTransportExchange(t *testing.T) {
-	ctx, err := createTransportCtx()
-	if err != nil {
-		t.Fatalf("Error while creating ctx: %s", err)
-	}
+	ctx := createTransportCtx(t)
 
 	receiverPeer := &simplePeer{ctx.receiver.ID(), []peer.Address{}}
 	connID, err := connection.NewRandomID()
@@ -159,27 +159,33 @@ func TestTransportExchange(t *testing.T) {
 		t.Fatalf("Error while creating connecction ID: %s", err)
 	}
 
+	timeout := 15 * time.Minute
+
 	ctx.receiverTx.RegisterHandlers(
-		&testConnectHandler{connection.ConnectResponse{
+		&testExchangeHandler[connection.ConnectRequest, connection.ConnectResponse]{connection.ConnectResponse{
 			ConnectionID:  connID,
 			Errors:        []string{"test connect error resp"},
 			Accepted:      true,
 			RejectReasons: []string{"test connect reject reason"},
 		}, nil, transport.Options{}},
-		&testWitnessHandler{connection.WitnessResponse{
+		&testExchangeHandler[connection.WitnessRequest, connection.WitnessResponse]{connection.WitnessResponse{
 			ConnectionID:  connID,
 			Errors:        []string{"test witness error resp"},
 			Accepted:      true,
 			RejectReasons: []string{"test witness reject reason"},
 		}, nil, transport.Options{}},
+		&testExchangeHandler[peer.PeersRequest, *peer.PeersResponse]{&peer.PeersResponse{
+			Peers: []peer.Peer{&simplePeer{ctx.receiver.ID(), []peer.Address{"testAddr"}}},
+		}, nil, transport.Options{}},
 		&testWitnessNotificationHandler{nil, transport.Options{}},
-		&testCloseHandler{nil, transport.Options{}},
+		&testCloseHandler{nil, transport.Options{ReadTimeout: &timeout}},
 	)
 
 	tests := []struct {
 		req          any
 		resp         any
 		expectedResp any
+		compareFunc  func(expected any, actual any) bool
 	}{
 		{
 			connection.ConnectRequest{
@@ -197,6 +203,7 @@ func TestTransportExchange(t *testing.T) {
 				Accepted:      true,
 				RejectReasons: []string{"test connect reject reason"},
 			},
+			nil,
 		},
 		{
 			connection.WitnessRequest{
@@ -214,27 +221,69 @@ func TestTransportExchange(t *testing.T) {
 				Accepted:      true,
 				RejectReasons: []string{"test witness reject reason"},
 			},
+			nil,
+		},
+		{
+			req:  peer.PeersRequest{Num: 1},
+			resp: &peer.PeersResponse{},
+			expectedResp: &peer.PeersResponse{
+				Peers: []peer.Peer{&simplePeer{ctx.receiver.ID(), []peer.Address{"testAddr"}}},
+			},
+			compareFunc: func(expected any, actual any) bool {
+				expectedResp, ok := expected.(*peer.PeersResponse)
+				if !ok {
+					return false
+				}
+
+				actualResp, ok := actual.(*peer.PeersResponse)
+				if !ok {
+					return false
+				}
+
+				if len(expectedResp.Peers) != 1 {
+					panic("Someone changed the test!")
+				}
+
+				if len(expectedResp.Peers) != len(actualResp.Peers) {
+					return false
+				}
+
+				expectedPeer := expectedResp.Peers[0]
+				actualPeer := actualResp.Peers[0]
+
+				if expectedPeer.ID() != actualPeer.ID() {
+					return false
+				}
+
+				if !reflect.DeepEqual(expectedPeer.Addresses(), actualPeer.Addresses()) {
+					return false
+				}
+				return true
+			},
 		},
 	}
 
 	for i, test := range tests {
-		if _, err := ctx.senderTx.Exchange(receiverPeer, transport.Options{}, test.req, test.resp); err != nil {
+		if _, err := ctx.senderTx.Exchange(receiverPeer, transport.Options{ReadTimeout: &timeout}, test.req, test.resp); err != nil {
 			t.Errorf("Test %d got error while sending: %s", i, err)
+			writeLogs(t, *ctx)
 		}
-		if !reflect.DeepEqual(test.resp, test.expectedResp) {
+		matches := test.compareFunc
+		if matches == nil {
+			matches = reflect.DeepEqual
+		}
+		if !matches(test.resp, test.expectedResp) {
 			t.Errorf("Test %d response did not match. Expected: %v, Got: %v", i, test.expectedResp, test.resp)
 		}
 	}
 }
 
 func TestIncorrectTypeError(t *testing.T) {
-	ctx, err := createTransportCtx()
-	if err != nil {
-		t.Fatalf("Error while creating ctx: %s", err)
-	}
+	ctx := createTransportCtx(t)
 	ctx.receiverTx.RegisterHandlers(
-		&testConnectHandler{connection.ConnectResponse{}, nil, transport.Options{}},
-		&testWitnessHandler{connection.WitnessResponse{}, nil, transport.Options{}},
+		&testExchangeHandler[connection.ConnectRequest, connection.ConnectResponse]{connection.ConnectResponse{}, nil, transport.Options{}},
+		&testExchangeHandler[connection.WitnessRequest, connection.WitnessResponse]{connection.WitnessResponse{}, nil, transport.Options{}},
+		&testExchangeHandler[peer.PeersRequest, *peer.PeersResponse]{&peer.PeersResponse{}, nil, transport.Options{}},
 		&testWitnessNotificationHandler{nil, transport.Options{}},
 		&testCloseHandler{nil, transport.Options{}},
 	)
@@ -281,18 +330,17 @@ func TestIncorrectTypeError(t *testing.T) {
 		err := test.fn()
 		if err == nil || err.Error() != test.expectedErr.Error() {
 			t.Errorf("Test %d error did not match. Expected: %s, Got: %s", i, test.expectedErr, err)
+			writeLogs(t, *ctx)
 		}
 	}
 }
 
 func TestReceiverReset(t *testing.T) {
-	ctx, err := createTransportCtx()
-	if err != nil {
-		t.Fatalf("Error while creating ctx: %s", err)
-	}
+	ctx := createTransportCtx(t)
 	ctx.receiverTx.RegisterHandlers(
-		&testConnectHandler{connection.ConnectResponse{}, errors.New("test connect error"), transport.Options{}},
-		&testWitnessHandler{connection.WitnessResponse{}, nil, transport.Options{}},
+		&testExchangeHandler[connection.ConnectRequest, connection.ConnectResponse]{connection.ConnectResponse{}, errors.New("test connect error"), transport.Options{}},
+		&testExchangeHandler[connection.WitnessRequest, connection.WitnessResponse]{connection.WitnessResponse{}, nil, transport.Options{}},
+		&testExchangeHandler[peer.PeersRequest, *peer.PeersResponse]{&peer.PeersResponse{}, nil, transport.Options{}},
 		&testWitnessNotificationHandler{nil, transport.Options{}},
 		&testCloseHandler{errors.New("test close error"), transport.Options{}},
 	)
@@ -344,31 +392,17 @@ func TestReceiverReset(t *testing.T) {
 // These are the basic handlers that can be used for any test that requires success.
 //
 
-type testConnectHandler struct {
-	resp    connection.ConnectResponse
+type testExchangeHandler[I, O any] struct {
+	resp    O
 	err     error
 	options transport.Options
 }
 
-func (h *testConnectHandler) Handle(peerID peer.ID, request connection.ConnectRequest) (connection.ConnectResponse, error) {
+func (h *testExchangeHandler[I, O]) Handle(peerID peer.ID, request I) (O, error) {
 	return h.resp, h.err
 }
 
-func (h *testConnectHandler) Options() transport.Options {
-	return h.options
-}
-
-type testWitnessHandler struct {
-	resp    connection.WitnessResponse
-	err     error
-	options transport.Options
-}
-
-func (h *testWitnessHandler) Handle(peerID peer.ID, request connection.WitnessRequest) (connection.WitnessResponse, error) {
-	return h.resp, h.err
-}
-
-func (h *testWitnessHandler) Options() transport.Options {
+func (h *testExchangeHandler[I, O]) Options() transport.Options {
 	return h.options
 }
 

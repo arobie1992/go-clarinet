@@ -45,52 +45,13 @@ func NewNode(
 	}
 	connectHandler := connectHandlerAdapter{handlers.ConnectHandler, &node}
 	witnessHandler := witnessHandlerAdapter{handlers.WitnessHandler, &node}
+	peerRequestHandler := peerRequestHandlerAdapter{handlers.PeerRequestHandler, &node}
 	witnessNotificationHandler := witnessNotificationHandlerAdapter{handlers.WitnessNotificationHandler, &node}
 	closeHandler := closeHandlerAdapter{handlers.CloseHandler, &node}
-	if err := transport.RegisterHandlers(&connectHandler, &witnessHandler, &witnessNotificationHandler, &closeHandler); err != nil {
+	if err := transport.RegisterHandlers(&connectHandler, &witnessHandler, &peerRequestHandler, &witnessNotificationHandler, &closeHandler); err != nil {
 		return nil, err
 	}
 	return &node, nil
-}
-
-type readOnlyConnection struct {
-	id       connection.ID
-	sender   peer.ID
-	witness  peer.ID
-	receiver peer.ID
-	status   connection.Status
-}
-
-func (c readOnlyConnection) String() string {
-	return fmt.Sprintf("{%s %s %s %s %s}", c.id, c.sender, c.witness, c.receiver, c.status)
-}
-
-func (c readOnlyConnection) ID() connection.ID {
-	return c.id
-}
-
-func (c readOnlyConnection) Receiver() peer.ID {
-	return c.receiver
-}
-
-func (c readOnlyConnection) Sender() peer.ID {
-	return c.sender
-}
-
-func (_ readOnlyConnection) SetStatus(status connection.Status) (connection.Connection, error) {
-	return nil, errors.ErrUnsupported
-}
-
-func (_ readOnlyConnection) SetWitness(peerID peer.ID) (connection.Connection, error) {
-	return nil, errors.ErrUnsupported
-}
-
-func (c readOnlyConnection) Status() connection.Status {
-	return c.status
-}
-
-func (c readOnlyConnection) Witness() peer.ID {
-	return c.witness
 }
 
 // Connections returns a read only view of all the conncetions in the node's peerstore
@@ -234,12 +195,12 @@ func (n *Node) sendWitnessNotification(conn connection.Connection, options trans
 		panic("Self is neither sender nor receiver for connection %s.")
 	}
 
-	peer, err := n.peerStore.Find(peerToNotify)
+	p, err := n.peerStore.Find(peerToNotify)
 	if err != nil {
 		return err
 	}
 
-	return n.transport.Send(peer, options, connection.WitnessNotification{ConnectionID: conn.ID(), Witness: conn.Witness()})
+	return n.transport.Send(p, options, connection.WitnessNotification{ConnectionID: conn.ID(), Witness: conn.Witness()})
 }
 
 func (n *Node) requestConnection(dest peer.Peer, conn connection.Connection, connOpts connection.Options, trptOpts transport.Options) error {
@@ -404,266 +365,43 @@ func (n *Node) requestWitness(peer peer.Peer, conn connection.Connection, connOp
 	}
 }
 
-type connectHandlerAdapter struct {
-	userHandler transport.ConnectHandler
-	node        *Node
+type CollectiveError struct {
+	Errs []error
 }
 
-func (h *connectHandlerAdapter) Handle(peerID peer.ID, request connection.ConnectRequest) (connection.ConnectResponse, error) {
-	sender, err := h.node.peerStore.Find(request.Sender)
+func (e *CollectiveError) Error() string {
+	return fmt.Sprintf("Errors: %v", e.Errs)
+}
+
+func (n *Node) RequestPeers(p peer.Peer, request peer.PeersRequest, options transport.Options) ([]peer.Peer, error) {
+	err := n.UpdatePeer(p)
 	if err != nil {
-		return connection.ConnectResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{err.Error()},
-			Accepted:      false,
-			RejectReasons: []string{},
-		}, nil
-	}
-	h.node.log.Trace("Found sender in peerstore: %s", sender)
-
-	receiver, err := h.node.peerStore.Find(request.Receiver)
-	if err != nil {
-		return connection.ConnectResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{err.Error()},
-			Accepted:      false,
-			RejectReasons: []string{},
-		}, nil
-	}
-	h.node.log.Trace("Found receiver in peerstore: %s", receiver)
-
-	if sender.ID() != peerID && receiver.ID() != peerID {
-		return connection.ConnectResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{},
-			Accepted:      false,
-			RejectReasons: []string{"Will not accept connection from node that is not either the sender or the receiver."},
-		}, nil
-	}
-	h.node.log.Trace("ConnectRequest is from a node that is either going to be the sender or the receiver, so is permitted.")
-
-	self, err := h.node.peerStore.Self()
-	if err != nil {
-		return connection.ConnectResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{err.Error()},
-			Accepted:      false,
-			RejectReasons: []string{},
-		}, nil
-	}
-	h.node.log.Trace("Got self: %s", self)
-
-	if request.Sender != self.ID() && request.Receiver != self.ID() {
-		return connection.ConnectResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{},
-			Accepted:      false,
-			RejectReasons: []string{"Connection is not to or from this node."},
-		}, nil
-	}
-	h.node.log.Trace("ConnectRequest is for a connection that would either be to or from this node, so is permitted.")
-
-	resp, err := h.userHandler.Handle(peerID, request)
-	if err != nil || len(resp.Errors) > 0 || !resp.Accepted {
-		h.node.log.Debug("Connection will not be added to peer store")
-		if h.node.log.Level().AtLeast(log.Trace()) {
-			h.node.log.Trace("err != nil: %t", err != nil)
-			h.node.log.Trace("len(resp.Errors): %d", len(resp.Errors))
-			h.node.log.Trace("!resp.Accepted: %t", !resp.Accepted)
-		}
-		return resp, err
-	}
-	h.node.log.Trace("Got response from handler: %v", resp)
-
-	h.node.log.Debug("Preparing to accept connection %s into peerstore", request.ConnectionID)
-	if err := h.node.connectionStore.Accept(request.ConnectionID, sender, receiver, connection.AwaitingWitness()); err != nil {
-		resp.Errors = append(resp.Errors, err.Error())
-		return resp, nil
+		return nil, err
 	}
 
-	if (request.Options.WitnessSelector == connection.WitnessSelectorReceiver() && self.ID() == request.Receiver) ||
-		(request.Options.WitnessSelector == connection.WitnessSelectorSender() && self.ID() == request.Sender) {
-		go func() {
-			err := h.node.connectionStore.Update(request.ConnectionID, func(conn connection.Connection) (connection.Connection, error) {
-				return h.node.handleWitnessSelection(conn, request.Options, h.Options())
-			})
-			if err != nil {
-				h.node.log.Error("Encountered error while attempting to select witness for connection %s: %s", request.ConnectionID, err)
+	if request.Num < 1 {
+		return []peer.Peer{}, errors.New("Must request at least one peer.")
+	}
+	resp := &peer.PeersResponse{}
+	if _, err = n.transport.Exchange(p, options, request, resp); err != nil {
+		return []peer.Peer{}, err
+	}
+
+	errs := []error{}
+	if len(resp.Peers) > request.Num {
+		resp.Peers = resp.Peers[:request.Num]
+		errs = append(errs, errors.New("Target node returned more peers than requested."))
+	}
+	for _, np := range resp.Peers {
+		for _, addr := range np.Addresses() {
+			if err := n.peerStore.AddAddr(np.ID(), addr); err != nil {
+				errs = append(errs, fmt.Errorf("Encountered error adding address %s for peer %s: %s", addr, np.ID(), err))
 			}
-		}()
-	}
-	return resp, nil
-}
-
-func (h *connectHandlerAdapter) Options() transport.Options {
-	return h.userHandler.Options()
-}
-
-type witnessHandlerAdapter struct {
-	userHandler transport.WitnessHandler
-	node        *Node
-}
-
-func (h *witnessHandlerAdapter) Handle(peerID peer.ID, request connection.WitnessRequest) (connection.WitnessResponse, error) {
-	sender, err := h.node.peerStore.Find(request.Sender)
-	if err != nil {
-		return connection.WitnessResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{err.Error()},
-			Accepted:      false,
-			RejectReasons: []string{},
-		}, nil
+		}
 	}
 
-	receiver, err := h.node.peerStore.Find(request.Receiver)
-	if err != nil {
-		return connection.WitnessResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{err.Error()},
-			Accepted:      false,
-			RejectReasons: []string{},
-		}, nil
+	if len(errs) > 0 {
+		err = &CollectiveError{errs}
 	}
-
-	if sender.ID() != peerID && receiver.ID() != peerID {
-		return connection.WitnessResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{},
-			Accepted:      false,
-			RejectReasons: []string{"Will not accept connection from node that is not either the sender or the receiver."},
-		}, nil
-	}
-
-	self, err := h.node.Self()
-	if err != nil {
-		return connection.WitnessResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{err.Error()},
-			Accepted:      false,
-			RejectReasons: []string{},
-		}, nil
-	}
-
-	if sender.ID() == self.ID() || receiver.ID() == self.ID() {
-		return connection.WitnessResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{},
-			Accepted:      false,
-			RejectReasons: []string{"Cannot witness request in self is sender or receiver in."},
-		}, nil
-	}
-
-	resp, err := h.userHandler.Handle(peerID, request)
-	if err != nil || len(resp.Errors) > 0 || !resp.Accepted {
-		return resp, err
-	}
-
-	if err := h.node.connectionStore.Accept(request.ConnectionID, sender, receiver, connection.Open()); err != nil {
-		resp.Errors = append(resp.Errors, err.Error())
-		return resp, nil
-	}
-
-	err = h.node.connectionStore.Update(request.ConnectionID, func(conn connection.Connection) (connection.Connection, error) {
-		self, err := h.node.Self()
-		if err != nil {
-			return nil, err
-		}
-		return conn.SetWitness(self.ID())
-	})
-	if err != nil {
-		return connection.WitnessResponse{
-			ConnectionID:  request.ConnectionID,
-			Errors:        []string{err.Error()},
-			Accepted:      false,
-			RejectReasons: []string{},
-		}, nil
-	}
-
-	return resp, nil
-}
-
-func (h *witnessHandlerAdapter) Options() transport.Options {
-	return h.userHandler.Options()
-}
-
-type witnessNotificationHandlerAdapter struct {
-	userHandler transport.WitnessNotificationHandler
-	node        *Node
-}
-
-func (h *witnessNotificationHandlerAdapter) Handle(peerID peer.ID, notification connection.WitnessNotification) error {
-	return h.node.connectionStore.Update(notification.ConnectionID, func(conn connection.Connection) (connection.Connection, error) {
-		if conn.Status() != connection.AwaitingWitness() {
-			return nil, fmt.Errorf(
-				"Received witness notification from peer %s for connection %s that is not awaiting witness notification.",
-				peerID,
-				conn.ID(),
-			)
-		}
-		h.node.log.Trace("Connection %s is in %s so will update", conn.ID(), connection.AwaitingWitness())
-
-		self, err := h.node.peerStore.Self()
-		if err != nil {
-			return nil, err
-		}
-		h.node.log.Trace("Successfully got self")
-
-		expectedPeer := conn.Sender()
-		if expectedPeer == self.ID() {
-			expectedPeer = conn.Receiver()
-		}
-		h.node.log.Debug("Expecting witness notification from: %s", expectedPeer)
-
-		if peerID != expectedPeer {
-			return nil, fmt.Errorf(
-				"Received witness notification from unexpected peer for connection %s. Expected: %s, Got: %s",
-				conn.ID(),
-				expectedPeer,
-				peerID,
-			)
-		}
-		h.node.log.Trace("Witness notification came from expected peer")
-
-		if err := h.userHandler.Handle(peerID, notification); err != nil {
-			return nil, err
-		}
-
-		conn, err = conn.SetWitness(notification.Witness)
-		if err != nil {
-			return conn, err
-		}
-		return conn.SetStatus(connection.Open())
-	})
-}
-
-func (h *witnessNotificationHandlerAdapter) Options() transport.Options {
-	return h.userHandler.Options()
-}
-
-type closeHandlerAdapter struct {
-	userHandler transport.CloseHandler
-	node        *Node
-}
-
-func (h *closeHandlerAdapter) Handle(peerID peer.ID, request connection.CloseRequest) error {
-	return h.node.connectionStore.Update(request.ConnectionID, func(conn connection.Connection) (connection.Connection, error) {
-		if conn.Status() == connection.Closed() {
-			return nil, nil
-		}
-
-		if err := h.userHandler.Handle(peerID, request); err != nil {
-			conn, err2 := conn.SetStatus(connection.Closing())
-			if err2 != nil {
-				h.node.log.Error("Encountered error while attempting to set connection %s status to %s: %s", conn.ID(), connection.Closing(), err)
-				return nil, err
-			}
-			return conn, err
-		}
-
-		return conn.SetStatus(connection.Closed())
-	})
-}
-
-func (h *closeHandlerAdapter) Options() transport.Options {
-	return h.userHandler.Options()
+	return resp.Peers, err
 }
