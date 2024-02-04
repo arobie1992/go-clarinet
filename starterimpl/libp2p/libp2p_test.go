@@ -159,8 +159,6 @@ func TestTransportExchange(t *testing.T) {
 		t.Fatalf("Error while creating connecction ID: %s", err)
 	}
 
-	timeout := 15 * time.Minute
-
 	ctx.receiverTx.RegisterHandlers(
 		&testExchangeHandler[connection.ConnectRequest, connection.ConnectResponse]{connection.ConnectResponse{
 			ConnectionID:  connID,
@@ -178,7 +176,7 @@ func TestTransportExchange(t *testing.T) {
 			Peers: []peer.Peer{&simplePeer{ctx.receiver.ID(), []peer.Address{"testAddr"}}},
 		}, nil, transport.Options{}},
 		&testWitnessNotificationHandler{nil, transport.Options{}},
-		&testCloseHandler{nil, transport.Options{ReadTimeout: &timeout}},
+		&testCloseHandler{nil, transport.Options{}},
 	)
 
 	tests := []struct {
@@ -264,7 +262,7 @@ func TestTransportExchange(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		if _, err := ctx.senderTx.Exchange(receiverPeer, transport.Options{ReadTimeout: &timeout}, test.req, test.resp); err != nil {
+		if _, err := ctx.senderTx.Exchange(receiverPeer, transport.Options{}, test.req, test.resp); err != nil {
 			t.Errorf("Test %d got error while sending: %s", i, err)
 			writeLogs(t, *ctx)
 		}
