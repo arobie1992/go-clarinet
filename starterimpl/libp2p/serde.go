@@ -27,6 +27,10 @@ func (t *libp2pTransport) serialize(input any) ([]byte, error) {
 		return t.serializeWitnessNotification(v)
 	case connection.CloseRequest:
 		return t.serializeCloseRequest(v)
+	case peer.PeersRequest:
+		return t.serializePeersRequest(v)
+	case *peer.PeersResponse:
+		return t.serializePeersResponse(*v)
 	default:
 		return nil, fmt.Errorf("Cannot serialize unrecognized type: %T", input)
 	}
@@ -47,6 +51,10 @@ func (t *libp2pTransport) deserialize(in []byte, out any) error {
 		return t.deserializeWitnessNotification(in, v)
 	case *connection.CloseRequest:
 		return t.deserializeCloseRequest(in, v)
+	case *peer.PeersRequest:
+		return t.deserializePeersRequest(in, v)
+	case *peer.PeersResponse:
+		return t.deserializePeersResponse(in, v)
 	default:
 		return fmt.Errorf("Cannot deserialize unrecognized type: %T", out)
 	}
@@ -243,6 +251,71 @@ func (t *libp2pTransport) deserializeCloseRequest(in []byte, r *connection.Close
 	return nil
 }
 
+func (t *libp2pTransport) serializePeersRequest(r peer.PeersRequest) ([]byte, error) {
+	return []byte(fmt.Sprintf("%d;", r.Num)), nil
+}
+
+func (t *libp2pTransport) deserializePeersRequest(in []byte, r *peer.PeersRequest) error {
+	parts, err := getParts(in, 1)
+	if err != nil {
+		return err
+	}
+	num, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return err
+	}
+	r.Num = num
+	return nil
+}
+
+func (t *libp2pTransport) serializePeersResponse(r peer.PeersResponse) ([]byte, error) {
+	var strs []string
+	for _, p := range r.Peers {
+		var addrStrs []string
+		for _, a := range p.Addresses() {
+			addrStrs = append(addrStrs, string(a))
+		}
+		addrs := t.serializeSlice(addrStrs)
+		strs = append(strs, fmt.Sprintf("%s.%s;", encodePeerID(p.ID()), addrs))
+	}
+	t.l.Trace("strs: %v", strs)
+	serializedStrs := fmt.Sprintf("%s;", t.serializeSlice(strs))
+	return []byte(serializedStrs), nil
+}
+
+func (t *libp2pTransport) deserializePeersResponse(in []byte, r *peer.PeersResponse) error {
+	parts, err := getParts(in, 1)
+	if err != nil {
+		return err
+	}
+	peerStrs, err := t.deserializeSlice(parts[0])
+	if err != nil {
+		return err
+	}
+	var peers []peer.Peer
+	for _, pStr := range peerStrs {
+		parts, err := getParts([]byte(pStr), 2)
+		if err != nil {
+			return err
+		}
+		id, err := decodePeerID(parts[0])
+		if err != nil {
+			return err
+		}
+		addrStrs, err := t.deserializeSlice(parts[1])
+		if err != nil {
+			return err
+		}
+		var addrs []peer.Address
+		for _, s := range addrStrs {
+			addrs = append(addrs, peer.Address(s))
+		}
+		peers = append(peers, &lp2pPeer{id, addrs})
+	}
+	r.Peers = peers
+	return nil
+}
+
 func getParts(in []byte, numParts int) ([]string, error) {
 	s := string(in)
 	if s[len(s)-1] != ';' {
@@ -281,7 +354,7 @@ func b64enc(plain string) string {
 func b64dec(enc string) (string, error) {
 	b, err := base64.RawStdEncoding.DecodeString(enc)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	return string(b), nil
 }

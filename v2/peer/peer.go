@@ -1,7 +1,7 @@
 package peer
 
 // ID is the unique identifier for the peer. If two instances of Peer have the same ID, they must be
-// considered logically identical. 
+// considered logically identical.
 //
 // ID is an interface to allow flexibility in display formatting, but all implementations must
 // maintain the invariant that logically equivalent IDs conform to standard Go equality operations.
@@ -26,4 +26,12 @@ type Peer interface {
 	ID() ID
 	// Addresses are the addresses at which the Peer is reachable, for example a URL or IP address and port.
 	Addresses() []Address
+}
+
+type PeersRequest struct {
+	Num int
+}
+
+type PeersResponse struct {
+	Peers []Peer
 }

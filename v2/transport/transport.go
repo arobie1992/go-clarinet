@@ -13,6 +13,7 @@ type Transport interface {
 	RegisterHandlers(
 		connectHandler ConnectHandler,
 		witnessHandler WitnessHandler,
+		peerRequestHandler PeerRequestHandler,
 		witnessNotificationHandler WitnessNotificationHandler,
 		closeHandler CloseHandler,
 	) error
@@ -56,12 +57,14 @@ type ExchangeHandler[I, O any] interface {
 
 type ConnectHandler = ExchangeHandler[connection.ConnectRequest, connection.ConnectResponse]
 type WitnessHandler = ExchangeHandler[connection.WitnessRequest, connection.WitnessResponse]
+type PeerRequestHandler = ExchangeHandler[peer.PeersRequest, *peer.PeersResponse]
 type WitnessNotificationHandler = SendHandler[connection.WitnessNotification]
 type CloseHandler = SendHandler[connection.CloseRequest]
 
 type Handlers struct {
 	ConnectHandler             ConnectHandler
 	WitnessHandler             WitnessHandler
+	PeerRequestHandler         PeerRequestHandler
 	WitnessNotificationHandler WitnessNotificationHandler
 	CloseHandler               CloseHandler
 }
